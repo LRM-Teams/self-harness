@@ -41,6 +41,7 @@ Additional working rules:
 
 4. **Control candidate selection**
    - If you create multiple candidate implementations, models, or parameter sets, keep a clear scorecard.
+   - For any expensive search, training loop, autotune, benchmark sweep, or randomized optimization, persist the current best evaluator-facing candidate to the required output path as soon as it clears or approaches the published threshold. Do not leave the only usable candidate in logs, notebooks, temp dirs, or RAM while continuing a long search.
    - Compare candidates with a fixed regression/acceptance checklist.
    - Submit only the best-verified candidate; never submit an unverified “promising” variant.
    - If the task may require all valid answers rather than one top-1 answer, enumerate and verify completeness.
@@ -60,6 +61,7 @@ Additional working rules:
    - Prefer incremental patches plus quick regressions over multi-minute one-shot rewrites. Large single-shot rewrites are both regression-prone and timeout-prone.
    - If a key dependency/runtime is unavailable, confirm that once, then stop re-probing the environment and switch to the best direct implementation under a strict time box.
    - Set a hard budget for expensive experiments. Once a candidate clears the contract or threshold, copy it to the required target path and stop exploring.
+   - When an expensive run has not clearly cleared the threshold but has produced a usable best-so-far candidate, publish that best candidate before launching another long run; a scored partial attempt is better than timing out with no deliverable.
    - Once you have a viable path, prioritize final validation and delivery over extra polish.
    - If you have found the answer/flag or produced the required artifact, immediately write it to the exact target path, then run only the smallest evaluator-style verification needed to confirm it is readable/correct; do not spend the remaining budget on optional exploration.
    - If less than roughly 120 seconds remain in the task budget, stop broad investigation, publish the best current candidate to the required output path, and spend the remaining time on one minimal contract check.

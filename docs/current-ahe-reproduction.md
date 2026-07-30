@@ -72,7 +72,7 @@ Keep these ledgers separate:
 
 ## Current patch summary
 
-- `experiments/evolved_harness/systemprompt.md`: adds verifier-command normalization so agents do not treat silent `python test_outputs.py` success as acceptance when `pytest`/evaluator-style runners are required.
+- `experiments/evolved_harness/systemprompt.md`: adds verifier-command normalization so agents do not treat silent `python test_outputs.py` success as acceptance when `pytest`/evaluator-style runners are required; adds finalize-best-candidate guidance for long search/training loops.
 - `scripts/build_templates.py`: relaxes E2B API-client construction to use the current `ConnectionConfig` directly.
 - `experiments/evolved_harness/code_agent.gpt55-openai-chat.yaml`: documents the provider-compatible OpenAI-chat config that drops unsupported sampling params and uses `max_completion_tokens`.
 
