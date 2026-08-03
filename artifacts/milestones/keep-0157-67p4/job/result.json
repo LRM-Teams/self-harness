@@ -1,0 +1,127 @@
+{
+    "id": "5c28041f-53bc-4a67-84dc-673a5bf5d182",
+    "started_at": "2026-08-01T01:57:32.253040",
+    "finished_at": "2026-08-01T03:30:58.944116",
+    "n_total_trials": 89,
+    "stats": {
+        "n_trials": 89,
+        "n_errors": 3,
+        "evals": {
+            "nexau__terminal-bench": {
+                "n_trials": 87,
+                "n_errors": 3,
+                "metrics": [
+                    {
+                        "mean": 0.6741573033707865
+                    }
+                ],
+                "reward_stats": {
+                    "reward": {
+                        "0.0": [
+                            "gpt2-codegolf__jFjC7fY",
+                            "path-tracing-reverse__tvVQBCi",
+                            "regex-chess__dFkXmy8",
+                            "torch-tensor-parallelism__8mtchgK",
+                            "path-tracing__ikehrHx",
+                            "caffe-cifar-10__3LcA4bE",
+                            "chess-best-move__dDAdMC4",
+                            "polyglot-rust-c__dRQvmWA",
+                            "db-wal-recovery__zhssg9B",
+                            "train-fasttext__dGFiw6F",
+                            "video-processing__zoybuJg",
+                            "install-windows-3.11__5fEMs4A",
+                            "make-doom-for-mips__bCZjezR",
+                            "tune-mjcf__mbx6yRS",
+                            "gcode-to-text__2NLnuPz",
+                            "make-mips-interpreter__HqfteNo",
+                            "mteb-leaderboard__t2KgDwE",
+                            "raman-fitting__ucpWCvm",
+                            "query-optimize__6X4NR4o",
+                            "extract-elf__iFXgZAP",
+                            "polyglot-c-py__oC2fc54",
+                            "pytorch-model-recovery__UJTocKt",
+                            "sam-cell-seg__w2tm4Bm",
+                            "model-extraction-relu-logits__hbXBspK",
+                            "large-scale-text-editing__VZpo5Zi",
+                            "dna-insert__ShSZtyg",
+                            "dna-assembly__VLQ62fN"
+                        ],
+                        "1.0": [
+                            "llm-inference-batching-scheduler__By5nKuR",
+                            "break-filter-js-from-html__Kx7Pyp2",
+                            "reshard-c4-data__NcAaYnp",
+                            "write-compressor__5j8Fsz7",
+                            "merge-diff-arc-agi-task__SnrcLt9",
+                            "winning-avg-corewars__in5eRuE",
+                            "log-summary-date-ranges__tt6RDLY",
+                            "pytorch-model-cli__emTYSuG",
+                            "largest-eigenval__cTtFbny",
+                            "password-recovery__E6oj8mp",
+                            "portfolio-optimization__UygRdyw",
+                            "modernize-scientific-stack__ak7Afpq",
+                            "prove-plus-comm__qPNAFXh",
+                            "feal-linear-cryptanalysis__n4VtoGV",
+                            "distribution-search__A4GjtH8",
+                            "mteb-retrieve__WdvHZpY",
+                            "pypi-server__iu74Wmo",
+                            "custom-memory-heap-crash__DS6s4Nk",
+                            "adaptive-rejection-sampler__mqRsYvL",
+                            "multi-source-data-merger__unzdoCE",
+                            "configure-git-webserver__VBc8vqz",
+                            "crack-7z-hash__9jc9e6W",
+                            "cobol-modernization__3FLSZ65",
+                            "overfull-hbox__YFCm6PE",
+                            "hf-model-inference__RdWXmAf",
+                            "compile-compcert__aSmFQKs",
+                            "headless-terminal__D35ykHS",
+                            "fix-git__m6WUCRs",
+                            "schemelike-metacircular-eval__m6iA26n",
+                            "qemu-startup__92QjKN8",
+                            "build-pov-ray__LkDRLCh",
+                            "git-multibranch__vD2iDx6",
+                            "qemu-alpine-ssh__Nqj3Xd7",
+                            "kv-store-grpc__caVYGiL",
+                            "torch-pipeline-parallelism__hGbFi2m",
+                            "extract-moves-from-video__vxapX7Q",
+                            "count-dataset-tokens__nBLuQjG",
+                            "circuit-fibsqrt__XAB2vVW",
+                            "mailman__iVjsWqT",
+                            "protein-assembly__A6Uqkq7",
+                            "code-from-image__fT9RyKx",
+                            "fix-code-vulnerability__dehkfEo",
+                            "financial-document-processor__jXHpw7c",
+                            "mcmc-sampling-stan__hnQG7BD",
+                            "regex-log__845B9sm",
+                            "cancel-async-tasks__evcpNZ4",
+                            "bn-fit-modify__hbDEm9u",
+                            "fix-ocaml-gc__zbw9jXi",
+                            "git-leak-recovery__GAyV67c",
+                            "build-cython-ext__ZgVTVrG",
+                            "nginx-request-logging__6NRTf5N",
+                            "sparql-university__F2zxVXC",
+                            "sqlite-db-truncate__wy7PXEG",
+                            "sanitize-git-repo__929wtjt",
+                            "build-pmars__sJhfyJF",
+                            "rstan-to-pystan__9zXo6gT",
+                            "sqlite-with-gcov__oxbGCLt",
+                            "openssl-selfsigned-cert__Ydgc2MD",
+                            "constraints-scheduling__73ab5At",
+                            "vulnerable-secret__ypxW5Lr"
+                        ]
+                    }
+                },
+                "exception_stats": {
+                    "AgentTimeoutError": [
+                        "tune-mjcf__mbx6yRS"
+                    ],
+                    "VerifierTimeoutError": [
+                        "filter-js-from-html__r79JoPT"
+                    ],
+                    "LocalProtocolError": [
+                        "feal-differential-cryptanalysis__xZssHvG"
+                    ]
+                }
+            }
+        }
+    }
+}

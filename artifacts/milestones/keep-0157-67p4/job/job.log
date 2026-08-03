@@ -1,0 +1,227 @@
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Stopped periodic log download
+Periodic download: pulling agent logs from sandbox
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Periodic download: pulling agent logs from sandbox
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Periodic download: pulling agent logs from sandbox
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Exception AgentTimeoutError is in exclude_exceptions, not retrying
+Not retrying trial because the exception is not in include_exceptions or the maximum number of retries has been reached
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Trial feal-differential-cryptanalysis__xZssHvG failed: Invalid input ConnectionInputs.RECV_PING in state ConnectionState.CLOSED
+Stopped periodic log download
+Failed to download logs to jobs/kai-cleanfull-keep/kai-cleanfull-keep-659cff3-20260801-0157/feal-differential-cryptanalysis__xZssHvG/agent
+Sandbox has already been removed.
+Not retrying trial because the maximum number of retries has been reached
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Periodic download: pulling agent logs from sandbox
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Periodic download: pulling agent logs from sandbox
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Stopped periodic log download
+Stopped periodic log download
+Started periodic log download (every 300s)
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Started periodic log download (every 300s)
+Stopped periodic log download
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Started periodic log download (every 300s)
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download
+Trial filter-js-from-html__r79JoPT failed: Verifier execution timed out after 900.0 seconds
+Exception VerifierTimeoutError is in exclude_exceptions, not retrying
+Not retrying trial because the exception is not in include_exceptions or the maximum number of retries has been reached
+Periodic download: pulling agent logs from sandbox
+Stopped periodic log download

@@ -1,0 +1,91 @@
+{
+    "id": "234ab382-6552-4d03-9b93-a340b8d27a89",
+    "task_name": "llm-inference-batching-scheduler",
+    "trial_name": "llm-inference-batching-scheduler__By5nKuR",
+    "trial_uri": "file:///home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/jobs/kai-cleanfull-keep/kai-cleanfull-keep-659cff3-20260801-0157/llm-inference-batching-scheduler__By5nKuR",
+    "task_id": {
+        "git_url": "https://github.com/laude-institute/terminal-bench-2.git",
+        "git_commit_id": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+        "path": "llm-inference-batching-scheduler"
+    },
+    "source": "terminal-bench",
+    "task_checksum": "3a08e63e0643ea5914eedeecb08cb93a1f0a10b9dc7d19d1f570004af84531c8",
+    "config": {
+        "task": {
+            "path": "llm-inference-batching-scheduler",
+            "git_url": "https://github.com/laude-institute/terminal-bench-2.git",
+            "git_commit_id": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+            "overwrite": false,
+            "download_dir": null,
+            "source": "terminal-bench"
+        },
+        "trial_name": "llm-inference-batching-scheduler__By5nKuR",
+        "trials_dir": "jobs/kai-cleanfull-keep/kai-cleanfull-keep-659cff3-20260801-0157",
+        "timeout_multiplier": 1.0,
+        "agent": {
+            "name": "nexau",
+            "import_path": null,
+            "model_name": "gpt-5.5",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "config_path": "experiments/evolved_harness/code_agent.gpt55-keep-stack.yaml"
+            }
+        },
+        "environment": {
+            "type": "e2b",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "job_id": "5c28041f-53bc-4a67-84dc-673a5bf5d182"
+    },
+    "agent_info": {
+        "name": "nexau",
+        "version": "unknown",
+        "model_info": null
+    },
+    "agent_result": {
+        "n_input_tokens": null,
+        "n_cache_tokens": null,
+        "n_output_tokens": null,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 1.0
+        }
+    },
+    "exception_info": null,
+    "started_at": "2026-08-01T01:57:32.277089Z",
+    "finished_at": "2026-08-01T01:59:52.849710Z",
+    "environment_setup": {
+        "started_at": "2026-08-01T01:57:32.278814Z",
+        "finished_at": "2026-08-01T01:57:35.378322Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-08-01T01:57:35.378341Z",
+        "finished_at": "2026-08-01T01:57:38.052251Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-08-01T01:57:38.052601Z",
+        "finished_at": "2026-08-01T01:59:45.636757Z"
+    },
+    "verifier": {
+        "started_at": "2026-08-01T01:59:46.322080Z",
+        "finished_at": "2026-08-01T01:59:52.659940Z"
+    }
+}

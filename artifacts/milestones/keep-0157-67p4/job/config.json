@@ -1,0 +1,73 @@
+{
+    "job_name": "kai-cleanfull-keep-659cff3-20260801-0157",
+    "jobs_dir": "jobs/kai-cleanfull-keep",
+    "n_attempts": 1,
+    "timeout_multiplier": 1.0,
+    "debug": false,
+    "orchestrator": {
+        "type": "local",
+        "n_concurrent_trials": 6,
+        "quiet": false,
+        "retry": {
+            "max_retries": 0,
+            "include_exceptions": null,
+            "exclude_exceptions": [
+                "VerifierOutputParseError",
+                "VerifierTimeoutError",
+                "AgentTimeoutError",
+                "RewardFileEmptyError",
+                "RewardFileNotFoundError"
+            ],
+            "wait_multiplier": 1.0,
+            "min_wait_sec": 1.0,
+            "max_wait_sec": 60.0
+        },
+        "kwargs": {}
+    },
+    "environment": {
+        "type": "e2b",
+        "import_path": null,
+        "force_build": false,
+        "delete": true,
+        "override_cpus": null,
+        "override_memory_mb": null,
+        "override_storage_mb": null,
+        "override_gpus": null,
+        "kwargs": {}
+    },
+    "verifier": {
+        "override_timeout_sec": null,
+        "max_timeout_sec": null,
+        "disable": false
+    },
+    "metrics": [],
+    "agents": [
+        {
+            "name": "nexau",
+            "import_path": null,
+            "model_name": "gpt-5.5",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "config_path": "experiments/evolved_harness/code_agent.gpt55-keep-stack.yaml"
+            }
+        }
+    ],
+    "datasets": [
+        {
+            "task_names": null,
+            "exclude_task_names": null,
+            "n_tasks": null,
+            "registry": {
+                "name": null,
+                "url": "https://raw.githubusercontent.com/laude-institute/harbor/main/registry.json"
+            },
+            "name": "terminal-bench",
+            "version": "2.0",
+            "overwrite": false,
+            "download_dir": null
+        }
+    ],
+    "tasks": []
+}
