@@ -1,0 +1,33 @@
+# Single-knob: finalize-best-candidate (prompt) + LocalContextOnboarding only.
+# No SanitySmoke / ArtifactPublishGuard / TimeBudget / LoopDetection / PreCompletion.
+# Tess 2026-08-01 TWEAK `0025`: t2 — system_prompt + sidecar landing so cleaned tracer
+# gets literal `LocalContext onboarding:` (FRAMEWORK alone is stripped from cleaned.json).
+llm_config:
+  api_key: ${env.LLM_API_KEY}
+  api_type: openai_chat_completion
+  base_url: ${env.LLM_BASE_URL}
+  additional_drop_params:
+  - max_tokens
+  - temperature
+  - top_p
+  max_completion_tokens: 4096
+  model: ${env.LLM_MODEL}
+  stream: true
+max_context_tokens: 200000
+max_iterations: 300
+name: nexau_code_agent
+system_prompt: ./systemprompt.md
+system_prompt_type: jinja
+tool_call_mode: openai
+tools:
+- binding: tools.shell_tools:run_shell_command
+  name: run_shell_command
+  yaml_path: ./tool_descriptions/run_shell_command.tool.yaml
+middlewares:
+- import: middleware.execution_risk_hints:ExecutionRiskHintsMiddleware
+- import: middleware.local_context_onboarding:LocalContextOnboardingMiddleware
+  params:
+    inject_before_first_assistant: true
+tracers:
+- import: nexau.archs.tracer.adapters.in_memory:InMemoryTracer
+type: agent

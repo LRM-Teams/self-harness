@@ -1,0 +1,1 @@
+E2B SDK not installed. Install it with: pip install e2b

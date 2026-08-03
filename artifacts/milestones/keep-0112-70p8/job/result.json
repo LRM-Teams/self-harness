@@ -1,0 +1,125 @@
+{
+    "id": "9eacfdc8-887c-40d1-8ddc-89d2ccb6f1e9",
+    "started_at": "2026-08-03T01:14:14.125316",
+    "finished_at": "2026-08-03T03:05:08.728649",
+    "n_total_trials": 89,
+    "stats": {
+        "n_trials": 89,
+        "n_errors": 2,
+        "evals": {
+            "nexau__terminal-bench": {
+                "n_trials": 88,
+                "n_errors": 2,
+                "metrics": [
+                    {
+                        "mean": 0.7078651685393258
+                    }
+                ],
+                "reward_stats": {
+                    "reward": {
+                        "0.0": [
+                            "gpt2-codegolf__L299Wbi",
+                            "portfolio-optimization__K47Gr7M",
+                            "regex-chess__4QDSKZu",
+                            "torch-tensor-parallelism__PR4yNHb",
+                            "path-tracing__JRYAzny",
+                            "caffe-cifar-10__Q2ZUBmt",
+                            "mteb-retrieve__adnipjm",
+                            "chess-best-move__ivrxjGJ",
+                            "overfull-hbox__hXfExgz",
+                            "polyglot-rust-c__4omoin4",
+                            "db-wal-recovery__rr9erN4",
+                            "train-fasttext__F7Kc6QK",
+                            "video-processing__gqr2y8D",
+                            "install-windows-3.11__3yodbzL",
+                            "make-doom-for-mips__CnqsM5N",
+                            "torch-pipeline-parallelism__SbvNzBA",
+                            "tune-mjcf__daJQv4e",
+                            "gcode-to-text__w66WC4f",
+                            "mteb-leaderboard__gSNUfxa",
+                            "raman-fitting__BxFXgvg",
+                            "query-optimize__GL2mUvm",
+                            "protein-assembly__nNRfzM8",
+                            "sam-cell-seg__cSPGTsF",
+                            "dna-insert__ry5hPkL",
+                            "dna-assembly__4Yn9c7e"
+                        ],
+                        "1.0": [
+                            "llm-inference-batching-scheduler__U33yRE8",
+                            "break-filter-js-from-html__6iKUf4B",
+                            "reshard-c4-data__pmavZch",
+                            "write-compressor__6BxfZfn",
+                            "merge-diff-arc-agi-task__VSZ9JM4",
+                            "winning-avg-corewars__MYs4wdJ",
+                            "log-summary-date-ranges__g3NxPm8",
+                            "pytorch-model-cli__YKNcoNt",
+                            "largest-eigenval__9uLs6wP",
+                            "password-recovery__FvHPgpy",
+                            "path-tracing-reverse__rZBMNFB",
+                            "modernize-scientific-stack__4JCbH3o",
+                            "prove-plus-comm__Y4Y8bZH",
+                            "feal-linear-cryptanalysis__KqC2PvU",
+                            "distribution-search__WMdBhyQ",
+                            "pypi-server__fQdTk52",
+                            "custom-memory-heap-crash__bcRVmTX",
+                            "adaptive-rejection-sampler__6D9hx9s",
+                            "multi-source-data-merger__MJYmdxx",
+                            "configure-git-webserver__xBhPsHS",
+                            "crack-7z-hash__mgovNSD",
+                            "cobol-modernization__yPn7z8M",
+                            "hf-model-inference__mZnpi2e",
+                            "compile-compcert__hceQ9v2",
+                            "headless-terminal__GHu8e4B",
+                            "fix-git__gCZ25do",
+                            "schemelike-metacircular-eval__FVYmjrq",
+                            "qemu-startup__X7yMddY",
+                            "build-pov-ray__4UmtKbv",
+                            "git-multibranch__8XDKmCm",
+                            "qemu-alpine-ssh__mMwWcCx",
+                            "kv-store-grpc__8qvXUBb",
+                            "extract-moves-from-video__CqpMn5m",
+                            "make-mips-interpreter__ftbCuVn",
+                            "count-dataset-tokens__KUhtegK",
+                            "circuit-fibsqrt__xvtDH25",
+                            "mailman__oBDYPBB",
+                            "extract-elf__8teMpHU",
+                            "code-from-image__FSiYSJi",
+                            "fix-code-vulnerability__KJ6u9zA",
+                            "financial-document-processor__EEFAAYf",
+                            "mcmc-sampling-stan__FChs2Rq",
+                            "regex-log__NiTddbC",
+                            "feal-differential-cryptanalysis__r2Fj2dt",
+                            "polyglot-c-py__Ax5DGAK",
+                            "cancel-async-tasks__5CPuzzD",
+                            "bn-fit-modify__DaAejMF",
+                            "fix-ocaml-gc__vftArX2",
+                            "git-leak-recovery__VkGbpwo",
+                            "build-cython-ext__8LTS7Bh",
+                            "pytorch-model-recovery__Y4Qn6ax",
+                            "model-extraction-relu-logits__yd7N4uA",
+                            "nginx-request-logging__9begJtZ",
+                            "sparql-university__owyXVwf",
+                            "large-scale-text-editing__hcjkpNC",
+                            "sqlite-db-truncate__C7Q3Lb7",
+                            "sanitize-git-repo__Zt6kjFh",
+                            "build-pmars__4M6fQYn",
+                            "rstan-to-pystan__tufmPUv",
+                            "sqlite-with-gcov__tymSZUk",
+                            "openssl-selfsigned-cert__dYsAR5M",
+                            "constraints-scheduling__brhUhfZ",
+                            "vulnerable-secret__caL5uPZ"
+                        ]
+                    }
+                },
+                "exception_stats": {
+                    "AgentTimeoutError": [
+                        "tune-mjcf__daJQv4e"
+                    ],
+                    "VerifierTimeoutError": [
+                        "filter-js-from-html__v2rrXio"
+                    ]
+                }
+            }
+        }
+    }
+}

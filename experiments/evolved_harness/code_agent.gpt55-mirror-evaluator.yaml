@@ -1,0 +1,51 @@
+# Path C knife (Tess GO LRM-1009): KEEP stack + single MirrorEvaluatorGate
+# (AHE §2 mirror the evaluator before finishing). No SHELVE knobs
+# (≠ RereadDeliverable / OfficialChecker / EndStateReady / FailFast /
+# StopAfterPass / SemanticNotProxy / ContractFirst / LiteralContract /
+# CanonicalEntry / PreserveSemantics / ShortProbe / PersistBest /
+# TimeBudget / PP / hints).
+# Inject (Tess TWEAK `1623`): SYSTEM PREPEND if present else INSERT +
+# first-USER PREPEND + sticky SYSTEM-only re-paint + FRAMEWORK + trailing
+# USER + sidecar; literal `MirrorEvaluatorGate:` for计票.
+llm_config:
+  api_key: ${env.LLM_API_KEY}
+  api_type: openai_chat_completion
+  base_url: ${env.LLM_BASE_URL}
+  additional_drop_params:
+  - max_tokens
+  - temperature
+  - top_p
+  max_completion_tokens: 4096
+  model: ${env.LLM_MODEL}
+  stream: true
+max_context_tokens: 200000
+max_iterations: 300
+name: nexau_code_agent
+system_prompt: ./systemprompt.md
+system_prompt_type: jinja
+tool_call_mode: openai
+tools:
+- binding: tools.shell_tools:run_shell_command
+  name: run_shell_command
+  yaml_path: ./tool_descriptions/run_shell_command.tool.yaml
+middlewares:
+- import: middleware.deliverable_sanity_smoke:DeliverableSanitySmokeMiddleware
+  params:
+    min_iterations_before_nudge: 3
+    renudge_every_iterations: 8
+    max_nudges: 4
+    min_bytes: 8
+- import: middleware.artifact_publish_guard:ArtifactPublishGuardMiddleware
+  params:
+    min_iterations_before_nudge: 4
+    renudge_every_iterations: 12
+    max_nudges: 3
+- import: middleware.mirror_evaluator_gate:MirrorEvaluatorGateMiddleware
+  params:
+    min_iterations_before_nudge: 2
+    renudge_every_iterations: 8
+    max_nudges: 3
+    min_risk_events: 1
+tracers:
+- import: nexau.archs.tracer.adapters.in_memory:InMemoryTracer
+type: agent

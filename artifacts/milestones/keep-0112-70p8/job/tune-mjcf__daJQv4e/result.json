@@ -1,0 +1,96 @@
+{
+    "id": "ea96b511-0394-4994-886d-73788b764fae",
+    "task_name": "tune-mjcf",
+    "trial_name": "tune-mjcf__daJQv4e",
+    "trial_uri": "file:///home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/jobs/kai-cleanfull-keep/kai-cleanfull-keep-659cff3-20260803-0112/tune-mjcf__daJQv4e",
+    "task_id": {
+        "git_url": "https://github.com/laude-institute/terminal-bench-2.git",
+        "git_commit_id": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+        "path": "tune-mjcf"
+    },
+    "source": "terminal-bench",
+    "task_checksum": "0014600ed83c316bbc3b495879f147f234d06578281af02817c9955794d4ebef",
+    "config": {
+        "task": {
+            "path": "tune-mjcf",
+            "git_url": "https://github.com/laude-institute/terminal-bench-2.git",
+            "git_commit_id": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+            "overwrite": false,
+            "download_dir": null,
+            "source": "terminal-bench"
+        },
+        "trial_name": "tune-mjcf__daJQv4e",
+        "trials_dir": "jobs/kai-cleanfull-keep/kai-cleanfull-keep-659cff3-20260803-0112",
+        "timeout_multiplier": 1.0,
+        "agent": {
+            "name": "nexau",
+            "import_path": null,
+            "model_name": "gpt-5.5",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "config_path": "experiments/evolved_harness/code_agent.gpt55-keep-stack.yaml"
+            }
+        },
+        "environment": {
+            "type": "e2b",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "job_id": "9eacfdc8-887c-40d1-8ddc-89d2ccb6f1e9"
+    },
+    "agent_info": {
+        "name": "nexau",
+        "version": "unknown",
+        "model_info": null
+    },
+    "agent_result": {
+        "n_input_tokens": null,
+        "n_cache_tokens": null,
+        "n_output_tokens": null,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "exception_info": {
+        "exception_type": "AgentTimeoutError",
+        "exception_message": "Agent execution timed out after 900.0 seconds",
+        "exception_traceback": "Traceback (most recent call last):\n  File \"/home/vscode/.local/share/uv/python/cpython-3.14.3-linux-x86_64-gnu/lib/python3.14/asyncio/tasks.py\", line 488, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/harbor/agents/installed/base.py\", line 141, in run\n    result = await environment.exec(\n             ^^^^^^^^^^^^^^^^^^^^^^^\n    ...<4 lines>...\n    )\n    ^\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/tenacity/asyncio/__init__.py\", line 193, in async_wrapped\n    return await copy(fn, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/tenacity/asyncio/__init__.py\", line 112, in __call__\n    do = await self.iter(retry_state=retry_state)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/tenacity/asyncio/__init__.py\", line 157, in iter\n    result = await action(retry_state)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/tenacity/_utils.py\", line 111, in inner\n    return call(*args, **kwargs)\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/tenacity/__init__.py\", line 393, in <lambda>\n    self._add_action_func(lambda rs: rs.outcome.result())\n                                     ~~~~~~~~~~~~~~~~~^^\n  File \"/home/vscode/.local/share/uv/python/cpython-3.14.3-linux-x86_64-gnu/lib/python3.14/concurrent/futures/_base.py\", line 443, in result\n    return self.__get_result()\n           ~~~~~~~~~~~~~~~~~^^\n  File \"/home/vscode/.local/share/uv/python/cpython-3.14.3-linux-x86_64-gnu/lib/python3.14/concurrent/futures/_base.py\", line 395, in __get_result\n    raise self._exception\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/tenacity/asyncio/__init__.py\", line 116, in __call__\n    result = await fn(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/harbor/environments/e2b.py\", line 330, in exec\n    result = await handle.wait()\n             ^^^^^^^^^^^^^^^^^^^\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/e2b/sandbox_async/commands/command_handle.py\", line 250, in wait\n    raise self._iteration_exception\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/connectrpc/_client_async.py\", line 411, in _send_request_bidi_stream\n    async for chunk in resp.content:\n    ...<4 lines>...\n            await sleep(0)\nasyncio.exceptions.CancelledError\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/harbor/trial/trial.py\", line 253, in _execute_agent\n    await asyncio.wait_for(\n    ...<6 lines>...\n    )\n  File \"/home/vscode/.local/share/uv/python/cpython-3.14.3-linux-x86_64-gnu/lib/python3.14/asyncio/tasks.py\", line 487, in wait_for\n    async with timeouts.timeout(timeout):\n               ~~~~~~~~~~~~~~~~^^^^^^^^^\n  File \"/home/vscode/.local/share/uv/python/cpython-3.14.3-linux-x86_64-gnu/lib/python3.14/asyncio/timeouts.py\", line 114, in __aexit__\n    raise TimeoutError from exc_val\nTimeoutError\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/harbor/trial/trial.py\", line 427, in run\n    await self._execute_agent()\n  File \"/home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/.venv/lib/python3.14/site-packages/harbor/trial/trial.py\", line 262, in _execute_agent\n    raise AgentTimeoutError(\n        f\"Agent execution timed out after {self._agent_timeout_sec} seconds\"\n    ) from e\nharbor.trial.trial.AgentTimeoutError: Agent execution timed out after 900.0 seconds\n",
+        "occurred_at": "2026-08-03T02:15:13.840888"
+    },
+    "started_at": "2026-08-03T02:00:09.093773Z",
+    "finished_at": "2026-08-03T02:15:50.720519Z",
+    "environment_setup": {
+        "started_at": "2026-08-03T02:00:09.096270Z",
+        "finished_at": "2026-08-03T02:00:10.626021Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-08-03T02:00:10.626042Z",
+        "finished_at": "2026-08-03T02:00:13.822484Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-08-03T02:00:13.822860Z",
+        "finished_at": "2026-08-03T02:15:13.833613Z"
+    },
+    "verifier": {
+        "started_at": "2026-08-03T02:15:16.662414Z",
+        "finished_at": "2026-08-03T02:15:50.511200Z"
+    }
+}

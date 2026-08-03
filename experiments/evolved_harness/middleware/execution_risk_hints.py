@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 from nexau.archs.main_sub.execution.hooks import BeforeModelHookInput, AfterToolHookInput, HookResult, Middleware
@@ -9,6 +10,12 @@ from nexau.core.messages import Message, Role, TextBlock
 
 STATE_KEY = "execution_risk_hints_state"
 logger = logging.getLogger(__name__)
+
+# Durable fire marker (cleaned tracers often omit FRAMEWORK; tool notes + sidecar remain).
+_SIDECAR_CANDIDATES = (
+    Path("/logs/agent/execution_risk_hints.nudge.txt"),
+    Path("execution_risk_hints.nudge.txt"),
+)
 
 LOCALHOST_CHECK_RE = re.compile(r"https?://(?:127\.0\.0\.1|localhost|0\.0\.0\.0)(?::\d+)?/", re.IGNORECASE)
 VALIDATION_DESC_RE = re.compile(
@@ -83,6 +90,26 @@ NONCANONICAL_ACCEPTANCE_RE = re.compile(
     r"(?:\._release|/_release/|LD_LIBRARY_PATH=|/lib(?:64)?/ld-linux[^\s]*|ld-linux[^\s]*)",
     re.IGNORECASE,
 )
+# Exact deliverable paths named in the task contract (general; not task-specific).
+NAMED_ARTIFACT_RE = re.compile(
+    r"(?:(?:called|named|write(?:\s+a)?|create(?:\s+a)?|save(?:\s+(?:to|as))?|output(?:\s+to)?|path)\s+)?"
+    r"(/app/[A-Za-z0-9_./-]+\.(?:json|xml|bin|pt|pth|ckpt|pkl|sqlite|sql|txt|csv|yaml|yml|onnx|h5|npz))"
+    r"|(?:`|/app/)([A-Za-z0-9_.-]+\.(?:json|xml|bin|pt|pth|ckpt|pkl|sqlite|sql|txt|csv|yaml|yml|onnx|h5|npz))",
+    re.IGNORECASE,
+)
+WRITE_ARTIFACT_RE = re.compile(
+    r"(?:(?:^|[;&|]\s*)(?:cat|tee|cp|mv|install|python\d*\s+[^\n;|&]*\b(?:open|dump|to_json|save|torch\.save|joblib\.dump))\b"
+    r"|[>]{1,2}\s*)(/app/[A-Za-z0-9_./-]+)",
+    re.IGNORECASE,
+)
+MODEL_WEIGHT_NAME_RE = re.compile(
+    r"\b(?:model(?:\.|/)|weights?|checkpoint|\.caffemodel|\.pt\b|\.pth\b|\.onnx\b|state_dict)\b",
+    re.IGNORECASE,
+)
+MODEL_LOAD_RE = re.compile(
+    r"\b(?:torch\.load|load_state_dict|caffe\.Net|onnxruntime|tf\.keras\.models\.load|joblib\.load|pickle\.load|np\.load)\b",
+    re.IGNORECASE,
+)
 
 
 class ExecutionRiskHintsMiddleware(Middleware):
@@ -118,6 +145,7 @@ class ExecutionRiskHintsMiddleware(Middleware):
 
         updated_messages = list(hook_input.messages)
         updated_messages.append(Message(role=Role.FRAMEWORK, content=[TextBlock(text=reminder)]))
+        self._record_fire(pending_notes[: self.max_notes_per_call])
         logger.info("[ExecutionRiskHintsMiddleware] Surfaced %d pending risk note(s) before model call", len(pending_notes))
         return HookResult.with_modifications(messages=updated_messages)
 
@@ -142,8 +170,15 @@ class ExecutionRiskHintsMiddleware(Middleware):
         if timed_out:
             state["timeouts"] += 1
 
+        for written in self._extract_written_artifacts(command):
+            written_set = set(state.get("named_artifacts_written") or [])
+            written_set.add(written)
+            state["named_artifacts_written"] = sorted(written_set)
+
         if self._looks_semantic_run(command, description):
             state["semantic_validation_hits"] += 1
+        if MODEL_LOAD_RE.search(command) or MODEL_LOAD_RE.search(description):
+            state["model_load_hits"] = int(state.get("model_load_hits", 0) or 0) + 1
 
         shallow_validation = self._looks_shallow_validation(command, description)
         if shallow_validation:
@@ -300,6 +335,40 @@ class ExecutionRiskHintsMiddleware(Middleware):
                 )
             )
 
+        missing_named = self._missing_named_artifacts(state)
+        if missing_named and (
+            VALIDATION_DESC_RE.search(description)
+            or self._looks_semantic_run(command, description)
+            or state["shallow_validation_hits"] >= 1
+        ):
+            listed = ", ".join(missing_named[:4])
+            candidates.append(
+                (
+                    52,
+                    "named_artifact",
+                    f"ExecutionRiskHints: the contract names exact deliverable path(s) still missing on disk: {listed}. "
+                    "Create those exact paths and validate them from disk before publishing; substitutes or nearby files do not count.",
+                )
+            )
+
+        if (
+            state.get("model_weight_contract")
+            and state.get("model_load_hits", 0) == 0
+            and (
+                EXISTENCE_ONLY_RE.search(command)
+                or VALIDATION_DESC_RE.search(description)
+                or MODEL_WEIGHT_NAME_RE.search(command + "\n" + description)
+            )
+        ):
+            candidates.append(
+                (
+                    48,
+                    "model_semantic",
+                    "ExecutionRiskHints: this looks like a model/weight deliverable, but checks so far are existence/import-only. "
+                    "Load the real weights and run one evaluator-style semantic check (shape/inference/forward) before publishing; stubs or empty placeholders fail.",
+                )
+            )
+
         notes: list[str] = []
         for _, key, note in sorted(candidates, reverse=True):
             if state["emitted"].get(key):
@@ -315,6 +384,7 @@ class ExecutionRiskHintsMiddleware(Middleware):
                 if note not in pending:
                     pending.append(note)
             state["pending_framework_notes"] = pending[: self.max_notes_per_call]
+            self._record_fire(notes)
 
         hook_input.agent_state.set_global_value(STATE_KEY, state)
 
@@ -327,6 +397,8 @@ class ExecutionRiskHintsMiddleware(Middleware):
         state = raw_state if isinstance(raw_state, dict) else {}
         emitted = state.get("emitted")
         pending_framework_notes = state.get("pending_framework_notes")
+        named_required = state.get("named_artifacts_required")
+        named_written = state.get("named_artifacts_written")
         return {
             "long_steps": int(state.get("long_steps", 0) or 0),
             "long_ms": int(state.get("long_ms", 0) or 0),
@@ -336,9 +408,13 @@ class ExecutionRiskHintsMiddleware(Middleware):
             "dependency_probe_failures": int(state.get("dependency_probe_failures", 0) or 0),
             "shallow_validation_hits": int(state.get("shallow_validation_hits", 0) or 0),
             "semantic_validation_hits": int(state.get("semantic_validation_hits", 0) or 0),
+            "model_load_hits": int(state.get("model_load_hits", 0) or 0),
             "contract_flags_inferred": bool(state.get("contract_flags_inferred", False)),
             "clean_layout_contract": bool(state.get("clean_layout_contract", False)),
             "wrapper_contract": bool(state.get("wrapper_contract", False)),
+            "model_weight_contract": bool(state.get("model_weight_contract", False)),
+            "named_artifacts_required": [str(item) for item in named_required] if isinstance(named_required, list) else [],
+            "named_artifacts_written": [str(item) for item in named_written] if isinstance(named_written, list) else [],
             "pending_framework_notes": [str(item) for item in pending_framework_notes] if isinstance(pending_framework_notes, list) else [],
             "emitted": emitted if isinstance(emitted, dict) else {},
         }
@@ -350,7 +426,63 @@ class ExecutionRiskHintsMiddleware(Middleware):
         user_text = self._extract_user_text(messages)
         state["clean_layout_contract"] = bool(CLEAN_LAYOUT_CONTRACT_RE.search(user_text))
         state["wrapper_contract"] = bool(WRAPPER_CONTRACT_RE.search(user_text))
+        state["model_weight_contract"] = bool(MODEL_WEIGHT_NAME_RE.search(user_text))
+        required: list[str] = []
+        for match in NAMED_ARTIFACT_RE.finditer(user_text):
+            path = match.group(1) or match.group(2)
+            if not path:
+                continue
+            if not path.startswith("/"):
+                path = f"/app/{path.lstrip('./')}"
+            if path not in required:
+                required.append(path)
+        state["named_artifacts_required"] = required
         state["contract_flags_inferred"] = True
+
+    def _extract_written_artifacts(self, command: str) -> list[str]:
+        found: list[str] = []
+        for match in WRITE_ARTIFACT_RE.finditer(command):
+            path = match.group(1)
+            if path and path not in found:
+                found.append(path)
+        # Also catch python open('/app/x','w') style.
+        for match in re.finditer(r"['\"](/app/[^'\"]+)['\"]\s*,\s*['\"]w", command):
+            path = match.group(1)
+            if path not in found:
+                found.append(path)
+        return found
+
+    def _missing_named_artifacts(self, state: dict[str, Any]) -> list[str]:
+        required = [str(item) for item in state.get("named_artifacts_required") or []]
+        written = set(str(item) for item in state.get("named_artifacts_written") or [])
+        missing: list[str] = []
+        for path in required:
+            if path in written:
+                continue
+            # If the agent already created it outside tracked writes, accept on-disk presence.
+            try:
+                if Path(path).exists():
+                    written.add(path)
+                    continue
+            except OSError:
+                pass
+            missing.append(path)
+        state["named_artifacts_written"] = sorted(written)
+        return missing
+
+    def _record_fire(self, notes: list[str]) -> None:
+        if not notes:
+            return
+        payload = "ExecutionRiskHints:\n" + "\n".join(f"- {note}" for note in notes) + "\n"
+        for path in _SIDECAR_CANDIDATES:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(payload)
+                logger.info("[ExecutionRiskHintsMiddleware] Appended fire sidecar %s", path)
+                return
+            except OSError as exc:
+                logger.debug("[ExecutionRiskHintsMiddleware] Sidecar write failed %s: %s", path, exc)
 
     def _extract_user_text(self, messages: list[Any]) -> str:
         parts: list[str] = []

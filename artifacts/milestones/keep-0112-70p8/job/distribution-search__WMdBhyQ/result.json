@@ -1,0 +1,91 @@
+{
+    "id": "d00ed88e-d8ae-483a-a103-068336570bef",
+    "task_name": "distribution-search",
+    "trial_name": "distribution-search__WMdBhyQ",
+    "trial_uri": "file:///home/vscode/multica_workspaces/7beafc96-3c51-4fcc-9fe7-8c36ceb482ff/.multica/agents/9a35e80a-a255-42aa-8fab-aad21da7f8e0/workspace/self-harness/jobs/kai-cleanfull-keep/kai-cleanfull-keep-659cff3-20260803-0112/distribution-search__WMdBhyQ",
+    "task_id": {
+        "git_url": "https://github.com/laude-institute/terminal-bench-2.git",
+        "git_commit_id": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+        "path": "distribution-search"
+    },
+    "source": "terminal-bench",
+    "task_checksum": "9566c59435661995a4a64e71afc6b80baaa6339307dea1ae28608c9f2c1ce033",
+    "config": {
+        "task": {
+            "path": "distribution-search",
+            "git_url": "https://github.com/laude-institute/terminal-bench-2.git",
+            "git_commit_id": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+            "overwrite": false,
+            "download_dir": null,
+            "source": "terminal-bench"
+        },
+        "trial_name": "distribution-search__WMdBhyQ",
+        "trials_dir": "jobs/kai-cleanfull-keep/kai-cleanfull-keep-659cff3-20260803-0112",
+        "timeout_multiplier": 1.0,
+        "agent": {
+            "name": "nexau",
+            "import_path": null,
+            "model_name": "gpt-5.5",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "config_path": "experiments/evolved_harness/code_agent.gpt55-keep-stack.yaml"
+            }
+        },
+        "environment": {
+            "type": "e2b",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "job_id": "9eacfdc8-887c-40d1-8ddc-89d2ccb6f1e9"
+    },
+    "agent_info": {
+        "name": "nexau",
+        "version": "unknown",
+        "model_info": null
+    },
+    "agent_result": {
+        "n_input_tokens": null,
+        "n_cache_tokens": null,
+        "n_output_tokens": null,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 1.0
+        }
+    },
+    "exception_info": null,
+    "started_at": "2026-08-03T01:28:00.499342Z",
+    "finished_at": "2026-08-03T01:29:41.113789Z",
+    "environment_setup": {
+        "started_at": "2026-08-03T01:28:00.501389Z",
+        "finished_at": "2026-08-03T01:28:02.060207Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-08-03T01:28:02.060258Z",
+        "finished_at": "2026-08-03T01:28:04.581295Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-08-03T01:28:04.581681Z",
+        "finished_at": "2026-08-03T01:29:33.678881Z"
+    },
+    "verifier": {
+        "started_at": "2026-08-03T01:29:34.922425Z",
+        "finished_at": "2026-08-03T01:29:40.906388Z"
+    }
+}

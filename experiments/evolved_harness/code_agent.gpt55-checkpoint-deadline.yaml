@@ -1,0 +1,39 @@
+# Single-knob B2 (Tess 2026-08-01): finalize-best-candidate (prompt) +
+# CheckpointDeadline only. Soft wall-clock publish nudges for AgentTimeout
+# tasks (e.g. tune-mjcf @900s). NOT TimeBudget / HARD@900s (no rewrite, no
+# force_stop). Does NOT stack KEEP (SanitySmoke / APG).
+llm_config:
+  api_key: ${env.LLM_API_KEY}
+  api_type: openai_chat_completion
+  base_url: ${env.LLM_BASE_URL}
+  additional_drop_params:
+  - max_tokens
+  - temperature
+  - top_p
+  max_completion_tokens: 4096
+  model: ${env.LLM_MODEL}
+  stream: true
+max_context_tokens: 200000
+max_iterations: 300
+name: nexau_code_agent
+system_prompt: ./systemprompt.md
+system_prompt_type: jinja
+tool_call_mode: openai
+tools:
+- binding: tools.shell_tools:run_shell_command
+  name: run_shell_command
+  yaml_path: ./tool_descriptions/run_shell_command.tool.yaml
+middlewares:
+- import: middleware.execution_risk_hints:ExecutionRiskHintsMiddleware
+- import: middleware.checkpoint_deadline:CheckpointDeadlineMiddleware
+  params:
+    agent_timeout_sec: 900
+    remaining_milestones_sec:
+    - 360
+    - 180
+    - 90
+    max_nudges: 3
+    always_nudge: false
+tracers:
+- import: nexau.archs.tracer.adapters.in_memory:InMemoryTracer
+type: agent

@@ -1,0 +1,6 @@
+E2B SDK not installed. Install it with: pip install e2b
+配置文件: /nexau-workspace/code_agent.gpt55-keep-stack.yaml
+任务: You need to create a file called "/app/solution.txt" with the word found in "secret_file.txt" in the "secrets.7z" archive.
+
+--------------------------------------------------
+Agent 运行完成!
