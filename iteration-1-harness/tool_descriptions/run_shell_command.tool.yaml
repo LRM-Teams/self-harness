@@ -1,0 +1,54 @@
+type: tool
+name: run_shell_command
+description: >-
+  Executes a shell command as `bash -c <command>` in the sandbox. Prefer concise,
+  targeted commands: for large files use grep/head/tail/sed ranges, and redirect
+  very noisy build/install logs when possible. Long successful install/build/test
+  output may be compacted in the response to save context; use the returned
+  stdout_file/stderr_file paths with tail/sed if you need full details.
+
+  To run a command in the background, set `is_background: true` (do not append
+  `&`). Then use ordinary shell commands such as `ps`, `tail <stdout_file>`, and
+  `kill` to monitor or stop it; avoid long sleep-based polling.
+
+  Use `timeout_ms` for bounded probes/experiments. Keep the default for essential
+  builds that legitimately need time, but prefer short timeouts for uncertain or
+  exploratory commands.
+
+  Returned fields include compacted combined output, duration, exit_code, optional
+  error, optional backgroundPids, and full output file paths when available.
+input_schema:
+  type: object
+  properties:
+    command:
+      type: string
+      description: Exact bash command to execute as `bash -c <command>`
+    description:
+      type: string
+      description: >-
+        Brief description of the command for the user. Be specific and concise.
+        Ideally a single sentence. Can be up to 3 sentences for clarity. No line
+        breaks.
+    is_background:
+      type: boolean
+      description: >-
+        (OPTIONAL) Set to true if this command should be run in the background
+        (e.g. for long-running servers or watchers). The command will be started,
+        allowed to run for a brief moment to check for immediate errors, and then
+        moved to the background. If not provided, defaults to false.
+    timeout_ms:
+      type: integer
+      description: >-
+        (OPTIONAL) Maximum wall-clock time in milliseconds before the command is
+        terminated. Defaults to 300000 (5 minutes). Use shorter values for probes
+        or risky experiments; keep/default-increase only for necessary long builds.
+    dir_path:
+      type: string
+      description: >-
+        (OPTIONAL) The path of the directory to run the command in. If not
+        provided, the project root directory is used. Must be a directory within
+        the workspace and must already exist.
+  required:
+    - command
+  additionalProperties: false
+  $schema: http://json-schema.org/draft-07/schema#
