@@ -1104,12 +1104,10 @@ DEFAULT_DEBUG_QUERY = (
     "This task has {n_total} rollouts: {n_pass} passed, {n_fail} failed.\n"
     "{trace_labels}\n"
     "All traces are provided. Analyze why the failing attempts failed.\n\n"
-    "IMPORTANT: If verifier test output is provided below, it shows the REAL external test results "
-    "that determined pass/fail. The agent never sees this output. Cross-reference the verifier's "
-    "actual failure messages with the agent's trace to find the TRUE root cause.\n\n"
+    "Only rollout verdicts and agent-visible traces are guaranteed to be available. "
+    "Infer causes from what the agent itself observed; do not assume access to hidden evaluator details.\n\n"
     "Identify:\n"
-    "1. ROOT CAUSE: What is the fundamental reason for the failures? "
-    "Cross-reference with verifier output if available.\n"
+    "1. ROOT CAUSE: What is the most likely fundamental reason for the failures, based on trace evidence?\n"
     "2. PASS vs FAIL: If both passing and failing traces exist, what did successful attempts do differently?\n"
     "3. CRITICAL MISTAKE: At which point did the failing attempts go wrong?\n"
     "4. GENERAL MECHANISM: What structural mechanism (NOT task-specific knowledge) would prevent this class of failure?\n\n"
@@ -1131,13 +1129,10 @@ DEFAULT_DEBUG_QUERY_K1 = (
     "This task has a single rollout which FAILED.\n"
     "{trace_labels}\n"
     "Analyze the trace carefully and locate where the problem is.\n\n"
-    "IMPORTANT: If verifier test output is provided below, it shows the REAL external test results "
-    "that determined pass/fail. The agent never sees this output. Cross-reference the verifier's "
-    "actual failure messages with the agent's trace to find the TRUE root cause — the agent may "
-    "have believed it succeeded when the external test shows a different failure.\n\n"
+    "Only the FAIL verdict and agent-visible trace are guaranteed to be available. "
+    "Infer causes from what the agent itself observed; do not assume access to hidden evaluator details.\n\n"
     "Identify:\n"
-    "1. FAILURE POINT: At which exact step did things start going wrong? "
-    "Cross-reference with verifier output if available.\n"
+    "1. FAILURE POINT: At which exact step did things most likely start going wrong?\n"
     "2. ROOT CAUSE: What is the fundamental reason for the failure? "
     "Distinguish between 'agent thought it succeeded but verifier disagrees' vs 'agent encountered errors'.\n"
     "3. WHAT SHOULD HAVE BEEN DONE: What would the correct approach look like at the failure point?\n"
@@ -1170,6 +1165,40 @@ class TaskAnalysisJob:
     is_timeout: bool = False
     mode: str = "debug"  # "debug" | "summary"
     trace_type: str | None = None  # None → default; "in_memory_tracer" for raw dumps
+
+
+FEEDBACK_MODE_REWARD_ONLY = "reward_only"
+FEEDBACK_MODE_VERIFIER_OUTPUT = "verifier_output"
+_VALID_FEEDBACK_MODES = {FEEDBACK_MODE_REWARD_ONLY, FEEDBACK_MODE_VERIFIER_OUTPUT}
+
+
+def _feedback_mode(config: dict) -> str:
+    """Return the debugger feedback policy, defaulting to strict reward-only."""
+    mode = str(config.get("feedback_mode", FEEDBACK_MODE_REWARD_ONLY)).strip().lower()
+    if mode not in _VALID_FEEDBACK_MODES:
+        allowed = ", ".join(sorted(_VALID_FEEDBACK_MODES))
+        raise ValueError(f"agent_debugger.feedback_mode must be one of: {allowed}")
+    return mode
+
+
+def _read_verifier_output(trial_dir: Path, config: dict) -> str:
+    """Read verifier stdout only when the user explicitly opts into that policy.
+
+    In reward-only mode this function returns before constructing or touching
+    the verifier-output path. The pass/fail reward is collected separately.
+    """
+    if _feedback_mode(config) == FEEDBACK_MODE_REWARD_ONLY:
+        return ""
+    test_stdout = trial_dir / "verifier" / "test-stdout.txt"
+    if not test_stdout.exists():
+        return ""
+    try:
+        text = test_stdout.read_text(errors="replace").strip()
+    except OSError:
+        return ""
+    if len(text) > 4000:
+        return "... (truncated) ...\n" + text[-4000:]
+    return text
 
 
 _adb_path: str | None = None
@@ -1275,18 +1304,7 @@ def _build_adb_jobs(
             traces.append(history)
             rewards.append(reward_val)
             collected_trial_dirs.append(d)
-            # Collect verifier test output (truncated)
-            test_stdout = d / "verifier" / "test-stdout.txt"
-            if test_stdout.exists():
-                try:
-                    text = test_stdout.read_text(errors="replace").strip()
-                    if len(text) > 4000:
-                        text = "... (truncated) ...\n" + text[-4000:]
-                    verifier_outputs.append(text)
-                except OSError:
-                    verifier_outputs.append("")
-            else:
-                verifier_outputs.append("")
+            verifier_outputs.append(_read_verifier_output(d, config))
             if reward_val >= 1.0:
                 n_pass += 1
             elif reward_val < 0:
@@ -1736,6 +1754,8 @@ def run_parallel_adb_ask(
         print("[adb] skipping agent debugger analysis: adb not available")
         return None
 
+    feedback_mode = _feedback_mode(config)
+    print(f"[adb] feedback mode: {feedback_mode}")
     jobs = _build_adb_jobs(task_results, job_dir, config, timeout_tasks=timeout_tasks)
     if not jobs:
         print("[adb] no tasks to analyze")
@@ -3507,17 +3527,7 @@ def run_multi_variant_adb(config: dict, variant_results: list[dict],
                 label = "PASS" if rv >= 1.0 else ("TIMEOUT" if rv < 0 else "FAIL")
                 trace_variant_labels.append(f"variant_{vidx}:{label}")
 
-                test_stdout = d / "verifier" / "test-stdout.txt"
-                if test_stdout.exists():
-                    try:
-                        text = test_stdout.read_text(errors="replace").strip()
-                        if len(text) > 4000:
-                            text = "... (truncated) ...\n" + text[-4000:]
-                        verifier_outputs.append(text)
-                    except OSError:
-                        verifier_outputs.append("")
-                else:
-                    verifier_outputs.append("")
+                verifier_outputs.append(_read_verifier_output(d, adb_config))
 
         if not traces:
             continue

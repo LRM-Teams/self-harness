@@ -113,6 +113,10 @@ explore_agent:
 # 结果注入 evolution query §4，帮助 evolve agent 精准定位失败根因
 agent_debugger:
   enabled: true
+  # reward_only (default): expose only 0/1 verdicts, timeout status, and the
+  # agent's own traces. Never read hidden verifier stdout/assertions.
+  # verifier_output: legacy opt-in mode that includes verifier/test-stdout.txt.
+  feedback_mode: reward_only
   max_concurrent: 16            # 并行 adb ask 进程数（1 个 task = 1 个进程，含该 task 所有 rollout 轨迹）
   max_tasks: 90                  # 最多分析几个 task（debug 优先，summary 排后）
   timeout_per_task: 600          # 单个 task 的 adb ask 超时（秒），含 QA agent 多轮对话
