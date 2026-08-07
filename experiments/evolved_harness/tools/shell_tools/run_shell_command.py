@@ -7,8 +7,6 @@ Based on gemini-cli's shell.ts implementation.
 Supports foreground and background execution, timeout handling, and process management.
 """
 
-import posixpath
-import re
 import shlex
 import time
 from collections.abc import Callable
@@ -24,59 +22,6 @@ TRUNCATE_OUTPUT_THRESHOLD = 4_000_000  # Truncate when output exceeds this many 
 TRUNCATE_OUTPUT_LINES = 1000  # Keep last N lines when truncating
 MAX_TRUNCATED_LINE_WIDTH = 1000  # Max chars per line in truncated output
 MAX_TRUNCATED_CHARS = 4000  # Keep last N chars for single massive line
-LONG_STEP_NOTE_THRESHOLD_MS = 90_000
-PUBLISH_GUARD_KEY = "run_shell_command_publish_guard"
-POST_SUCCESS_OVERRIDE_TOKEN = "ALLOW_POST_SUCCESS_RESET"
-
-SUCCESS_SIGNAL_RE = re.compile(
-    r"(VALIDATION_OK|acceptance check passed|exact_match\s*[:=]\s*True|"
-    r"matches_expected(?:_design)?\s*[:=]\s*True|diff_exit=0|similarity\s+100(?:\.0+)?|"
-    r"EVAL_[A-Z_]+=|HTTP body:\s*<<|curl body =>\s*<<)",
-    re.IGNORECASE,
-)
-SCAN_CLEAN_SIGNAL_RE = re.compile(
-    r"(REMAINING_[A-Z_]*HITS=0|WORKTREE_[A-Z_]*HITS=0|\b0 hits\b|\bno hits\b|\bno matches\b|\bclean\b)",
-    re.IGNORECASE,
-)
-BENCHMARK_SIGNAL_RE = re.compile(
-    r"\b(candidate\d+|baseline|golden|speedup|median_s|elapsed_ms|QUERY PLAN|runtime|benchmark)\b",
-    re.IGNORECASE,
-)
-STRUCTURED_SOURCE_SIGNAL_RE = re.compile(
-    r"\b(Wayback|speedrun|SOLUTION|benchmark page)\b",
-    re.IGNORECASE,
-)
-FINAL_CHECK_RE = re.compile(
-    r"\b(final|evaluator(?:-style)?|acceptance|end-to-end|verified workflow|final sweep|final layout|deliverable)\b",
-    re.IGNORECASE,
-)
-TEST_FILE_RE = re.compile(r"\btest\s+-f\s+([^\s;&|]+)")
-CMP_FILE_RE = re.compile(r"\bcmp(?:\s+-s)?\s+([^\s;&|]+)\s+([^\s;&|]+)")
-CURL_PATH_RE = re.compile(r"\bcurl\b[^\n;|&]*https?://[^\s\"']+/([A-Za-z0-9_.-]+)")
-ROOT_URL_ONLY_CURL_RE = re.compile(r"\bcurl\b[^\n;|&]*https?://[^/\s\"']+/?(?:\s|$)", re.IGNORECASE)
-FIND_ROOT_RE = re.compile(r"\bfind\s+([^\s;&|]+)\s+[^\n;|&]*\s+-type\s+f\b")
-FIND_FILES_ONLY_RE = re.compile(r"\bfind\s+([^\s;&|]+)\s+[^\n;|&]*\s+-type\s+f\b", re.IGNORECASE)
-GIT_DIR_RE = re.compile(r"--git-dir=([^\s;&|]+)")
-WORK_TREE_RE = re.compile(r"--work-tree=([^\s;&|]+)")
-GIT_CLONE_SOURCE_RE = re.compile(r"\bgit\s+clone\s+([^\s;&|]+)")
-DESTRUCTIVE_FILE_RM_RE = re.compile(r"\brm\s+-[A-Za-z-]*[fr][A-Za-z-]*", re.IGNORECASE)
-DESTRUCTIVE_ROOT_RM_RE = re.compile(r"\brm\s+-[A-Za-z-]*r[A-Za-z-]*", re.IGNORECASE)
-DESTRUCTIVE_FIND_DELETE_RE = re.compile(r"\bfind\s+([^\s;&|]+)\s+[^\n;|&]*\s+-delete\b", re.IGNORECASE)
-DESTRUCTIVE_GIT_RE = re.compile(
-    r"\bgit\b[^\n;|&]*(?:\breset\s+--hard\b|\bclean\b[^\n;|&]*\bf\b|\bcheckout\s+-f\b|\bupdate-ref\s+-d\b|\bbranch\s+-D\b|\binit\b)",
-    re.IGNORECASE,
-)
-POST_SUCCESS_GIT_META_RE = re.compile(
-    r"\bgit\b[^\n;|&]*(?:\bcommit\b|\bfilter-branch\b|\brebase\b|\bcherry-pick\b|\bmerge\b|\bamend\b|\bgc\b|\breflog\b|\brepack\b|\bprune\b|\bfsck\b|\bupdate-ref\b)",
-    re.IGNORECASE,
-)
-SCRIPT_ENTRY_RE = re.compile(
-    r"\b(?:python\d*(?:\s+-u)?|bash|sh|Rscript|node|perl|ruby)\s+((?:/|\./|\.\./)[^\s;&|]+|[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+)",
-    re.IGNORECASE,
-)
-GENERIC_FILE_PATH_RE = re.compile(
-    r"(?<![\w./-])((?:/app|/srv|/git|\./|\.\./)[^\s\"'`;|&]+\.[A-Za-z0-9._-]+)"
-)
 
 
 def _truncate_shell_output(content: str) -> str:
@@ -104,343 +49,6 @@ def _truncate_shell_output(content: str) -> str:
         # Single massive line: keep last N chars
         snippet = content[-MAX_TRUNCATED_CHARS:]
         return f"Output too large. Showing the last {MAX_TRUNCATED_CHARS:,} characters of the output.\n...{snippet}"
-
-
-def _collect_execution_notes(
-    *,
-    command: str,
-    description: str | None,
-    output: str,
-    exit_code: int | None,
-    duration_ms: int,
-    timed_out: bool,
-) -> list[str]:
-    if timed_out:
-        return []
-
-    combined_text = "\n".join(part for part in (description or "", command, output) if part)
-    validation_text = "\n".join(part for part in (description or "", command) if part)
-    final_check_like = bool(FINAL_CHECK_RE.search(validation_text))
-    notes: list[str] = []
-
-    def add_note(note: str) -> None:
-        if note not in notes:
-            notes.append(note)
-
-    if duration_ms >= LONG_STEP_NOTE_THRESHOLD_MS:
-        add_note(
-            f"This step already consumed about {duration_ms / 1000:.0f}s. Reassess now: keep the cheapest viable path, cap further expensive experiments, and if a candidate already meets the contract, save it to the required target path before doing more exploration."
-        )
-
-    if final_check_like and ROOT_URL_ONLY_CURL_RE.search(command):
-        add_note(
-            "This only checks that the service root responds. If the contract names a specific public path/resource such as `/hello.html`, rerun the final check against that exact path and confirm its final content/status code."
-        )
-
-    if final_check_like and FIND_FILES_ONLY_RE.search(command):
-        add_note(
-            "This layout check only inspects regular files. Hidden directories or cache folders can still pollute the deliverable. Recheck the whole target tree including file and directory entries before publishing."
-        )
-
-    if BENCHMARK_SIGNAL_RE.search(combined_text):
-        add_note(
-            "Performance evidence is noisy. Compare candidate and baseline under the same setup with repeated alternating runs, decide by median/threshold, and stop once one candidate clearly clears the requirement."
-        )
-
-    if exit_code == 0 and SUCCESS_SIGNAL_RE.search(output):
-        add_note(
-            "This looks like acceptance-style or self-check success. Do not edit the deliverable again unless you have new failing evidence. If you do make further changes, rerun the exact final check from the canonical path/public entry point and reread the final artifact literally."
-        )
-
-    if exit_code == 0 and SCAN_CLEAN_SIGNAL_RE.search(output):
-        add_note(
-            "A zero-hit or 'clean' scan only proves that particular scan. Before finishing, independently reread the exact target files/output or compare against canonical placeholders/expected lines instead of validating with the same regex assumptions used to produce the change."
-        )
-
-    if STRUCTURED_SOURCE_SIGNAL_RE.search(combined_text):
-        add_note(
-            "If this structured source already gives you a plausible answer, prefer minimal verification plus delivery over open-ended OCR, reverse engineering, or further expensive reconstruction."
-        )
-
-    return notes[:2]
-
-
-def _clean_shell_token(token: str) -> str:
-    cleaned = token.strip().strip("\"'`[](){}")
-    while cleaned.endswith((";", ",", ":")):
-        cleaned = cleaned[:-1]
-    return cleaned
-
-
-def _extract_publish_guard_targets(command: str) -> tuple[set[str], set[str]]:
-    protected_files: set[str] = set()
-    protected_roots: set[str] = set()
-
-    for regex in (TEST_FILE_RE,):
-        for match in regex.finditer(command):
-            candidate = _clean_shell_token(match.group(1))
-            if candidate:
-                protected_files.add(candidate)
-
-    for match in CMP_FILE_RE.finditer(command):
-        for group in match.groups():
-            candidate = _clean_shell_token(group)
-            if candidate:
-                protected_files.add(candidate)
-
-    for match in CURL_PATH_RE.finditer(command):
-        candidate = _clean_shell_token(match.group(1))
-        if candidate:
-            protected_files.add(candidate)
-
-    for regex in (SCRIPT_ENTRY_RE, GENERIC_FILE_PATH_RE):
-        for match in regex.finditer(command):
-            candidate = _clean_shell_token(match.group(1))
-            if candidate and not candidate.startswith("/tmp/"):
-                protected_files.add(candidate)
-
-    for regex in (FIND_ROOT_RE, GIT_DIR_RE, WORK_TREE_RE, GIT_CLONE_SOURCE_RE):
-        for match in regex.finditer(command):
-            candidate = _clean_shell_token(match.group(1))
-            if candidate:
-                protected_roots.add(candidate)
-
-    return protected_files, protected_roots
-
-
-def _get_publish_guard(agent_state: AgentState | None) -> dict[str, list[str]]:
-    default_guard = {"files": [], "roots": []}
-    if agent_state is None:
-        return default_guard
-
-    stored = agent_state.get_global_value(PUBLISH_GUARD_KEY, default_guard)
-    if not isinstance(stored, dict):
-        return default_guard
-
-    files = stored.get("files")
-    roots = stored.get("roots")
-    return {
-        "files": [str(item) for item in files] if isinstance(files, list) else [],
-        "roots": [str(item) for item in roots] if isinstance(roots, list) else [],
-    }
-
-
-def _save_publish_guard(
-    agent_state: AgentState | None,
-    *,
-    protected_files: set[str],
-    protected_roots: set[str],
-) -> dict[str, list[str]]:
-    existing = _get_publish_guard(agent_state)
-    merged = {
-        "files": sorted({*existing["files"], *protected_files})[:32],
-        "roots": sorted({*existing["roots"], *protected_roots})[:32],
-    }
-    if agent_state is not None:
-        agent_state.set_global_value(PUBLISH_GUARD_KEY, merged)
-    return merged
-
-
-def _command_mentions_target(command: str, target: str) -> bool:
-    target = _clean_shell_token(target)
-    if not target:
-        return False
-    if target in command:
-        return True
-
-    basename = posixpath.basename(target)
-    if basename and basename != target:
-        return re.search(rf"(?<![\w.-]){re.escape(basename)}(?![\w.-])", command) is not None
-    return False
-
-
-def _command_resets_root(command: str, root: str) -> bool:
-    root = _clean_shell_token(root)
-    if not root:
-        return False
-
-    if re.search(rf"\bfind\s+{re.escape(root)}\b[^\n;|&]*\s+-delete\b", command, re.IGNORECASE):
-        return True
-
-    if DESTRUCTIVE_ROOT_RM_RE.search(command) and re.search(
-        rf"{re.escape(root)}(?:\s|$|/\*|/\.\*|/\.$)",
-        command,
-    ):
-        return True
-
-    if DESTRUCTIVE_GIT_RE.search(command) and (
-        re.search(rf"--git-dir={re.escape(root)}(?:\b|/)", command)
-        or re.search(rf"\bgit\s+init(?:\s+--bare)?\s+{re.escape(root)}(?:\b|/)", command)
-    ):
-        return True
-
-    return False
-
-
-def _target_variants(target: str) -> list[str]:
-    cleaned = _clean_shell_token(target)
-    if not cleaned:
-        return []
-
-    variants = [cleaned]
-    basename = posixpath.basename(cleaned)
-    if basename and basename != cleaned:
-        variants.append(basename)
-    return list(dict.fromkeys(variants))
-
-
-def _command_writes_protected_file(command: str, target: str) -> bool:
-    for variant in _target_variants(target):
-        escaped = re.escape(variant)
-        if re.search(rf"(?<!<)(?:>>?|1>>?|2>>?)\s*{escaped}(?:\b|$)", command):
-            return True
-        if re.search(rf"\btee\b[^\n;|&]*\s+{escaped}(?:\b|$)", command):
-            return True
-        if re.search(rf"\b(?:sed|perl)\b[^\n;|&]*\s-i(?:\S*)?[^\n;|&]*\s+{escaped}(?:\b|$)", command):
-            return True
-        if re.search(rf"\b(?:touch|truncate)\b[^\n;|&]*\s+{escaped}(?:\b|$)", command):
-            return True
-        if re.search(
-            rf"\b(?:cp|mv|install|ln)\b[^\n;|&]*\s+{escaped}(?:\s*(?:;|&&|\|\||$))",
-            command,
-            re.IGNORECASE,
-        ):
-            return True
-    return False
-
-
-def _command_runs_protected_script(command: str, target: str) -> bool:
-    for variant in _target_variants(target):
-        escaped = re.escape(variant)
-        if re.search(
-            rf"\b(?:python\d*(?:\s+-u)?|bash|sh|Rscript|node|perl|ruby)\b[^\n;|&]*\s+{escaped}(?:\b|$)",
-            command,
-            re.IGNORECASE,
-        ):
-            return True
-    return False
-
-
-def _command_is_dangerous_git_meta_op(command: str) -> bool:
-    return POST_SUCCESS_GIT_META_RE.search(command) is not None
-
-
-def _maybe_block_post_success_reset(
-    *,
-    command: str,
-    description: str | None,
-    agent_state: AgentState | None,
-) -> dict[str, Any] | None:
-    override_requested = POST_SUCCESS_OVERRIDE_TOKEN in command or POST_SUCCESS_OVERRIDE_TOKEN in (description or "")
-
-    guard = _get_publish_guard(agent_state)
-    if not guard["files"] and not guard["roots"]:
-        return None
-
-    reasons: list[str] = []
-    hard_reasons: list[str] = []
-    for protected_file in guard["files"]:
-        if (DESTRUCTIVE_FILE_RM_RE.search(command) or DESTRUCTIVE_FIND_DELETE_RE.search(command)) and _command_mentions_target(
-            command,
-            protected_file,
-        ):
-            reason = f"delete protected output {protected_file}"
-            reasons.append(reason)
-            if not _clean_shell_token(protected_file).startswith("/tmp/"):
-                hard_reasons.append(reason)
-        if _command_writes_protected_file(command, protected_file):
-            reason = f"rewrite protected file {protected_file}"
-            reasons.append(reason)
-            hard_reasons.append(reason)
-        if _command_runs_protected_script(command, protected_file):
-            reason = f"rerun protected generator script {protected_file}"
-            reasons.append(reason)
-            hard_reasons.append(reason)
-
-    for protected_root in guard["roots"]:
-        if _command_resets_root(command, protected_root):
-            reason = f"reset protected root {protected_root}"
-            reasons.append(reason)
-            if not _clean_shell_token(protected_root).startswith("/tmp/"):
-                hard_reasons.append(reason)
-
-    if _command_is_dangerous_git_meta_op(command):
-        reason = "mutate git history or repository metadata after publish state"
-        reasons.append(reason)
-        hard_reasons.append(reason)
-
-    if not reasons:
-        return None
-
-    if override_requested and not hard_reasons:
-        return None
-
-    detail = ", ".join(dict.fromkeys(reasons))
-    hard_detail = ", ".join(dict.fromkeys(hard_reasons))
-    if override_requested and hard_reasons:
-        warning = (
-            "Blocked a post-validation command even though the override token was provided because this command would "
-            f"{hard_detail}. Split cleanup from validation: remove explicit extras with a separate bounded command, "
-            "do any reruns in /tmp or a copied scratch directory, and keep git history/meta operations off the live "
-            "deliverable state. If the published state truly needs a code change, make that change first, then rerun "
-            "the full acceptance sweep before any further cleanup."
-        )
-    else:
-        warning = (
-            "Blocked a potentially destructive or state-mutating post-validation command because a prior "
-            f"final/evaluator-style check succeeded and this command would {detail}. Use /tmp or a copied "
-            "scratch directory for further experiments. If you truly have new failing evidence and only need a "
-            f"bounded cleanup/reset on the live deliverable state, include {POST_SUCCESS_OVERRIDE_TOKEN} in the "
-            "description with the reason, then rerun the full acceptance sweep after the change."
-        )
-    return {
-        "content": warning,
-        "returnDisplay": warning,
-        "duration_ms": 0,
-        "exit_code": 90,
-        "error": {
-            "message": warning,
-            "type": "POST_SUCCESS_STATE_GUARD",
-        },
-    }
-
-
-def _maybe_activate_publish_guard(
-    *,
-    command: str,
-    description: str | None,
-    exit_code: int | None,
-    agent_state: AgentState | None,
-    cwd: str | None,
-) -> str | None:
-    if exit_code != 0 or not description or not FINAL_CHECK_RE.search(description):
-        return None
-
-    protected_files, protected_roots = _extract_publish_guard_targets(command)
-    if cwd and not cwd.startswith("/tmp/"):
-        protected_roots.add(cwd)
-    guard = _save_publish_guard(
-        agent_state,
-        protected_files=protected_files,
-        protected_roots=protected_roots,
-    )
-
-    protected_targets = [*guard["files"], *guard["roots"]]
-    if protected_targets:
-        target_preview = ", ".join(protected_targets[:4])
-        if len(protected_targets) > 4:
-            target_preview += ", ..."
-        return (
-            "This final/evaluator-style check passed, so the current state is now your publish state. "
-            f"Do not reset repos/web roots, rewrite checked files, or rerun stateful generator scripts touching protected targets such as {target_preview}. If cleanup "
-            "is required, remove only explicit forbidden extras and rerun this same acceptance check after cleanup."
-        )
-
-    return (
-        "This final/evaluator-style check passed, so the current filesystem/service state is now your publish "
-        "state. Do any extra experiments in /tmp or a copied scratch directory instead of resetting, rewriting, "
-        "or rerunning stateful generators against the live deliverable state."
-    )
 
 
 def run_shell_command(
@@ -514,14 +122,6 @@ def run_shell_command(
 
         timeout_arg = timeout_ms if timeout_ms and timeout_ms > 0 else None
 
-        guard_block = _maybe_block_post_success_reset(
-            command=command,
-            description=description,
-            agent_state=agent_state,
-        )
-        if guard_block is not None:
-            return guard_block
-
         if is_background:
             # Background mode: sandbox.execute_bash supports cwd and background params
             start = time.time()
@@ -536,7 +136,9 @@ def run_shell_command(
             if bg_pid is not None:
                 llm_content = (
                     f"Background task started (pid: {bg_pid}). "
-                    f"Use BackgroundTaskManage with action='status' and pid={bg_pid} to check output."
+                    "This agent has no separate background-management tool; use run_shell_command "
+                    f"to poll it (for example: `ps -p {bg_pid}`) and inspect the stdout/stderr files "
+                    "returned below. Prefer short milestone-based polls over long fixed sleeps."
                 )
                 bg_result: dict[str, Any] = {
                     "content": llm_content,
@@ -600,9 +202,6 @@ def run_shell_command(
         if cmd_result.status == SandboxStatus.TIMEOUT:
             timeout_minutes = (timeout_ms / 60000) if timeout_ms else 0
             llm_parts.append(f"Timeout: command timed out after {timeout_minutes:.1f} minutes.")
-            llm_parts.append(
-                "Hint: inspect partial progress via stdout_file/stderr_file. For exploratory probes, use a smaller timeout_ms; for truly long-running installs, servers, training, or builds, prefer is_background=true and then follow up with short status/log checks."
-            )
         else:
             llm_parts.append(f"Output: {output if output else '(empty)'}")
 
@@ -611,27 +210,6 @@ def run_shell_command(
 
         if exit_code != 0:
             llm_parts.append(f"Exit Code: {exit_code}")
-
-        execution_notes = _collect_execution_notes(
-            command=command,
-            description=description,
-            output=output,
-            exit_code=exit_code,
-            duration_ms=duration_ms,
-            timed_out=cmd_result.status == SandboxStatus.TIMEOUT,
-        )
-        for note in execution_notes:
-            llm_parts.append(f"Execution note: {note}")
-
-        publish_guard_note = _maybe_activate_publish_guard(
-            command=command,
-            description=description,
-            exit_code=exit_code,
-            agent_state=agent_state,
-            cwd=cwd,
-        )
-        if publish_guard_note:
-            llm_parts.append(f"Execution note: {publish_guard_note}")
 
         llm_content = "\n".join(llm_parts)
 

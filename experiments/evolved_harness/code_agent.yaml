@@ -12,6 +12,12 @@ llm_config:
   top_p: 0.95
 max_context_tokens: 200000
 max_iterations: 300
+middlewares:
+- import: middleware.execution_guard:ExecutionGuardMiddleware
+  params:
+    enable_final_gate: true
+    long_command_ms: 90000
+    long_sleep_seconds: 90
 name: nexau_code_agent
 system_prompt: ./systemprompt.md
 system_prompt_type: jinja
@@ -20,8 +26,6 @@ tools:
 - binding: tools.shell_tools:run_shell_command
   name: run_shell_command
   yaml_path: ./tool_descriptions/run_shell_command.tool.yaml
-middlewares:
-- import: middleware.execution_risk_hints:ExecutionRiskHintsMiddleware
 tracers:
 - import: nexau.archs.tracer.adapters.in_memory:InMemoryTracer
 type: agent
