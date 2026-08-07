@@ -250,7 +250,7 @@ agentic-harness-engineering/
 | `harbor_job_timeout_minutes` | 单次 harbor 评测的超时（0 = 不限） |
 | `experiment_timeout_minutes` | 整个实验的总 wall-clock 预算（0 = 不限） |
 | `llm.api_key / base_url / model` | 主 LLM 配置（通常保留 `${LLM_*}`） |
-| `agent_debugger.feedback_mode` | Debugger 反馈策略。默认 `reward_only` 只暴露判定和 agent 自身轨迹，且不读取 verifier stdout；显式设为 `verifier_output` 才启用旧版详细评测反馈。 |
+| `agent_debugger.feedback_mode` | Debugger 反馈策略。默认 `reward_only` 暴露判定、agent 自身轨迹及白名单过程元数据，但不暴露 verifier 文本；显式设为 `verifier_output` 才启用旧版详细评测反馈。 |
 | `agent_debugger.llm` | 给 ADB 专用的 LLM（debug 时可换更强的模型） |
 | `notify.feishu_webhook` | 可选：在实验里程碑时推飞书 webhook |
 
@@ -263,9 +263,12 @@ agent_debugger:
   feedback_mode: reward_only
 ```
 
-该模式只向 Agent Debugger 提供每次 rollout 的 PASS/FAIL/TIMEOUT 标签和
-coding agent 自己的轨迹。AHE 不会读取 `verifier/test-stdout.txt`，也不会把
-其内容注入 debugger prompt 或生成的分析报告。旧版 `verifier_output` 模式
+该模式向 Agent Debugger 提供每次 rollout 的 PASS/FAIL/TIMEOUT 标签、
+coding agent 自己的轨迹，以及从 `result.json` 和 `verifier/ctrf.json` 中
+严格白名单提取的数值/布尔过程元数据（完成/异常标志、测试汇总计数和耗时）。
+AHE 不会复制测试名称、文件路径、message、trace、配置或 verifier payload
+等自由文本字段，也不会读取或注入 `verifier/test-stdout.txt`。旧版
+`verifier_output` 模式
 必须显式开启，并可能暴露隐藏断言、期望数值或其他 evaluator 信息。
 
 此策略约束 AHE 的自动反馈管线，但不是针对恶意修改 evolver 的操作系统级

@@ -1159,6 +1159,7 @@ class TaskAnalysisJob:
     trace_rewards: list[float] = field(default_factory=list)
     trial_dirs: list[Path] = field(default_factory=list)
     verifier_outputs: list[str] = field(default_factory=list)
+    process_metadata: list[str] = field(default_factory=list)
     n_pass: int = 0
     n_fail: int = 0
     n_timeout: int = 0
@@ -1199,6 +1200,55 @@ def _read_verifier_output(trial_dir: Path, config: dict) -> str:
     if len(text) > 4000:
         return "... (truncated) ...\n" + text[-4000:]
     return text
+
+
+def _read_safe_process_metadata(trial_dir: Path) -> str:
+    """Extract allowlisted, non-textual execution metadata from Harbor results.
+
+    Never copy arbitrary strings from result.json or ctrf.json. In particular,
+    test names, file paths, messages, traces, config, and verifier payloads may
+    reveal hidden tests or expected answers and are intentionally ignored.
+    """
+    metadata: dict[str, object] = {}
+
+    result_path = trial_dir / "result.json"
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        result = {}
+    if isinstance(result, dict):
+        metadata["trial_finished"] = result.get("finished_at") is not None
+        metadata["execution_exception"] = result.get("exception_info") is not None
+        for stage_name in ("environment_setup", "agent_setup", "agent_execution", "verifier"):
+            stage = result.get(stage_name)
+            if isinstance(stage, dict):
+                metadata[f"{stage_name}_finished"] = stage.get("finished_at") is not None
+
+    ctrf_path = trial_dir / "verifier" / "ctrf.json"
+    try:
+        ctrf = json.loads(ctrf_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        ctrf = {}
+    if isinstance(ctrf, dict):
+        results = ctrf.get("results")
+        if isinstance(results, dict):
+            summary = results.get("summary")
+            if isinstance(summary, dict):
+                for key in ("tests", "passed", "failed", "skipped", "pending", "other"):
+                    value = summary.get(key)
+                    if isinstance(value, int) and not isinstance(value, bool):
+                        output_key = "tests_total" if key == "tests" else f"tests_{key}"
+                        metadata[output_key] = value
+                start = summary.get("start")
+                stop = summary.get("stop")
+                if (isinstance(start, (int, float)) and not isinstance(start, bool)
+                        and isinstance(stop, (int, float)) and not isinstance(stop, bool)
+                        and stop >= start):
+                    metadata["tests_duration_seconds"] = round(stop - start, 3)
+
+    if not metadata:
+        return ""
+    return json.dumps(metadata, sort_keys=True, separators=(",", ":"))
 
 
 _adb_path: str | None = None
@@ -1296,6 +1346,7 @@ def _build_adb_jobs(
         rewards: list[float] = []
         collected_trial_dirs: list[Path] = []
         verifier_outputs: list[str] = []
+        process_metadata: list[str] = []
         n_pass = n_fail = n_timeout = 0
         for d, reward_val in trial_dirs:
             history = d / "agent" / trace_filename
@@ -1305,6 +1356,7 @@ def _build_adb_jobs(
             rewards.append(reward_val)
             collected_trial_dirs.append(d)
             verifier_outputs.append(_read_verifier_output(d, config))
+            process_metadata.append(_read_safe_process_metadata(d))
             if reward_val >= 1.0:
                 n_pass += 1
             elif reward_val < 0:
@@ -1321,6 +1373,7 @@ def _build_adb_jobs(
             trace_rewards=rewards,
             trial_dirs=collected_trial_dirs,
             verifier_outputs=verifier_outputs,
+            process_metadata=process_metadata,
             n_pass=n_pass,
             n_fail=n_fail,
             n_timeout=n_timeout,
@@ -1334,8 +1387,18 @@ def _build_adb_jobs(
 
 
 def _build_verifier_context(job: TaskAnalysisJob) -> str:
-    """Build a concise verifier output section to include in the debugger query."""
-    parts: list[str] = []
+    """Build safe process metadata plus optional legacy verifier output."""
+    safe_parts: list[str] = []
+    for i, (rv, metadata) in enumerate(zip(job.trace_rewards, job.process_metadata), 1):
+        if not metadata:
+            continue
+        label = "TIMEOUT" if rv < 0 else ("PASS" if rv >= 1.0 else "FAIL")
+        safe_parts.append(
+            f"--- Allowlisted process metadata (rollout {i}, {label}) ---\n"
+            f"{metadata}\n"
+            f"--- end process metadata ---"
+        )
+    verifier_parts: list[str] = []
     for i, (rv, vout) in enumerate(zip(job.trace_rewards, job.verifier_outputs), 1):
         if not vout:
             continue
@@ -1349,18 +1412,25 @@ def _build_verifier_context(job: TaskAnalysisJob) -> str:
             vout_truncated = "\n".join(lines[-60:])
         else:
             vout_truncated = vout.strip()
-        parts.append(
+        verifier_parts.append(
             f"--- Verifier test output (rollout {i}, {label}) ---\n"
             f"{vout_truncated}\n"
             f"--- end verifier output ---"
         )
-    if not parts:
-        return ""
-    return (
-        "\n\n⚠️ VERIFIER TEST OUTPUT (this is what the EXTERNAL evaluator actually ran "
-        "after the agent completed — the agent NEVER sees this):\n"
-        + "\n\n".join(parts)
-    )
+    sections: list[str] = []
+    if safe_parts:
+        sections.append(
+            "\n\nPROCESS METADATA (strictly allowlisted numeric/boolean fields; "
+            "no test names, messages, traces, expected values, or reference answers):\n"
+            + "\n\n".join(safe_parts)
+        )
+    if verifier_parts:
+        sections.append(
+            "\n\n⚠️ VERIFIER TEST OUTPUT (legacy explicit opt-in; this is what the "
+            "EXTERNAL evaluator actually ran after the agent completed):\n"
+            + "\n\n".join(verifier_parts)
+        )
+    return "".join(sections)
 
 
 def _extract_trace_timing(trace_path: Path) -> str:
@@ -3467,6 +3537,7 @@ def run_multi_variant_adb(config: dict, variant_results: list[dict],
         traces: list[Path] = []
         rewards: list[float] = []
         verifier_outputs: list[str] = []
+        process_metadata: list[str] = []
         trace_variant_labels: list[str] = []
         n_pass = n_fail = n_timeout = 0
         is_timeout = False
@@ -3528,6 +3599,7 @@ def run_multi_variant_adb(config: dict, variant_results: list[dict],
                 trace_variant_labels.append(f"variant_{vidx}:{label}")
 
                 verifier_outputs.append(_read_verifier_output(d, adb_config))
+                process_metadata.append(_read_safe_process_metadata(d))
 
         if not traces:
             continue
@@ -3543,6 +3615,7 @@ def run_multi_variant_adb(config: dict, variant_results: list[dict],
             trace_paths=traces,
             trace_rewards=rewards,
             verifier_outputs=verifier_outputs,
+            process_metadata=process_metadata,
             n_pass=n_pass,
             n_fail=n_fail,
             n_timeout=n_timeout,
@@ -3588,6 +3661,7 @@ def run_multi_variant_adb(config: dict, variant_results: list[dict],
             trace_rewards=job.trace_rewards,
             trial_dirs=job.trial_dirs,
             verifier_outputs=job.verifier_outputs,
+            process_metadata=job.process_metadata,
             n_pass=job.n_pass,
             n_fail=job.n_fail,
             n_timeout=job.n_timeout,

@@ -248,7 +248,7 @@ agentic-harness-engineering/
 | `harbor_job_timeout_minutes` | Per-harbor-evaluation timeout (0 = unlimited) |
 | `experiment_timeout_minutes` | Total wall-clock budget for the experiment (0 = unlimited) |
 | `llm.api_key / base_url / model` | Main LLM config (usually left as `${LLM_*}`) |
-| `agent_debugger.feedback_mode` | Debugger feedback policy. `reward_only` (default) exposes verdicts and agent traces but never reads verifier stdout; `verifier_output` explicitly opts into legacy detailed evaluator feedback. |
+| `agent_debugger.feedback_mode` | Debugger feedback policy. `reward_only` (default) exposes verdicts, agent traces, and allowlisted process metadata but never verifier text; `verifier_output` explicitly opts into legacy detailed evaluator feedback. |
 | `agent_debugger.llm` | Dedicated LLM for ADB (can use a stronger model for debugging) |
 | `notify.feishu_webhook` | Optional Feishu webhook for experiment milestones |
 
@@ -261,9 +261,12 @@ agent_debugger:
   feedback_mode: reward_only
 ```
 
-In this mode Agent Debugger receives only per-rollout PASS/FAIL/TIMEOUT labels
-and the coding agent's own traces. AHE does not read or inject
-`verifier/test-stdout.txt` into debugger prompts or generated analysis reports.
+In this mode Agent Debugger receives per-rollout PASS/FAIL/TIMEOUT labels, the
+coding agent's own traces, and a strict allowlist of numeric/boolean process
+metadata extracted from `result.json` and `verifier/ctrf.json` (completion and
+exception flags, aggregate test counts, and test duration). AHE never copies
+free-form fields such as test names, file paths, messages, traces, configs, or
+verifier payloads, and does not read or inject `verifier/test-stdout.txt`.
 The legacy `verifier_output` mode must be selected explicitly and may expose
 hidden assertion details, expected values, or other evaluator information.
 

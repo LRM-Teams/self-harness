@@ -113,8 +113,9 @@ explore_agent:
 # 结果注入 evolution query §4，帮助 evolve agent 精准定位失败根因
 agent_debugger:
   enabled: true
-  # reward_only (default): expose only 0/1 verdicts, timeout status, and the
-  # agent's own traces. Never read hidden verifier stdout/assertions.
+  # reward_only (default): expose 0/1 verdicts, agent traces, and strictly
+  # allowlisted numeric/boolean process metadata from result/CTRF JSON. Never
+  # expose test names, paths, messages, traces, expected values, or answers.
   # verifier_output: legacy opt-in mode that includes verifier/test-stdout.txt.
   feedback_mode: reward_only
   max_concurrent: 16            # 并行 adb ask 进程数（1 个 task = 1 个进程，含该 task 所有 rollout 轨迹）
