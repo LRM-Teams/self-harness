@@ -1,0 +1,34 @@
+{
+  "stage": "cycle-4-retry-input",
+  "basis": "cycle-4 reward-only trace analysis against outer-cycle-3 and the original NexAU execution/tool contracts",
+  "changes": [
+    {
+      "id": "retry-1",
+      "type": "compatibility_fix",
+      "description": "Run foreground and background commands through explicit Bash because the public tool contract promises Bash while E2B and local backends may otherwise select /bin/sh.",
+      "files": [
+        "tools/shell_tools/run_shell_command.py"
+      ],
+      "preserved_contracts": [
+        "tool schema",
+        "success/error/timeout/background return dictionary shapes",
+        "cwd, timeout, and background behavior"
+      ]
+    },
+    {
+      "id": "retry-2",
+      "type": "completion_reliability",
+      "description": "Add sparse 15/30/45 minute delivery checkpoints, artifact-first progress reminders, destructive-scope warnings, and a one-time recovery only when every shell action failed.",
+      "files": [
+        "middleware/execution_guard.py",
+        "code_agent.yaml"
+      ],
+      "preserved_contracts": [
+        "normal model final responses are not intercepted",
+        "enable_final_gate remains false",
+        "explicit command timeouts and required long jobs remain available",
+        "system prompt remains byte-identical and 500 words"
+      ]
+    }
+  ]
+}

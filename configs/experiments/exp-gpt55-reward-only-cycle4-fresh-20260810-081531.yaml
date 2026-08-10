@@ -1,0 +1,64 @@
+_base: "../base.yaml"
+_name: "gpt55-reward-only-cycle4-fresh-20260810-081531"
+_description: "Fresh cycle 4: one Terminal-Bench 2.0 evaluation and one reward-only AHE evolution from outer-cycle-3"
+_tags: ["gpt55", "cycle4", "one-evolution", "reward-only", "fresh", "terminal-bench-2"]
+
+dataset: "terminal-bench@2.0"
+source_config_dir: "harness_inputs/outer-cycle-3-bc6ed22"
+target_pass_rate: 1.01
+max_iterations: 1
+
+harbor:
+  agent: "nexau"
+  env: "e2b"
+  k: 1
+  n_concurrent: 16
+
+llm:
+  api_key: "${LLM_API_KEY}"
+  base_url: "${LLM_BASE_URL}"
+  model: "gpt-5.5"
+
+code_agent_patch:
+  tool_call_mode: openai
+  llm_config:
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+evolve_agent:
+  tool_call_mode: openai
+  llm_config:
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL}"
+    model: "gpt-5.5"
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+explore_agent:
+  enabled: true
+
+explore_agent_patch:
+  tool_call_mode: openai
+  llm_config:
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+agent_debugger:
+  enabled: true
+  feedback_mode: reward_only
+  llm:
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL}"
+    model: "gpt-5.5"
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+notify:
+  enabled: false
