@@ -317,6 +317,15 @@ def init_workspace(source_dir: Path, workspace_dir: Path) -> bool:
     shutil.copytree(source_dir, workspace_dir)
 
     subprocess.run(["git", "init"], cwd=workspace_dir, check=True, capture_output=True)
+    # Fresh experiment workspaces must not depend on machine-global Git identity.
+    subprocess.run(
+        ["git", "config", "user.name", "AHE Runner"],
+        cwd=workspace_dir, check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "ahe-runner@localhost"],
+        cwd=workspace_dir, check=True, capture_output=True,
+    )
     subprocess.run(["git", "add", "-A"], cwd=workspace_dir, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", "v0: baseline from " + source_dir.name],

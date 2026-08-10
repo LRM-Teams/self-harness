@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from evolve import (
     _run_single_adb_ask,
     _write_debugger_analyse,
     build_evolution_query,
+    init_workspace,
 )
 
 
@@ -247,3 +249,19 @@ def test_debugger_subprocess_receives_only_staged_trace_and_safe_query(
     env = captured["env"]
     assert env["AHE_REWARD_ONLY_POLICY"] == "1"
     assert Path(env["ADB_RUNTIME_DIR"]).is_relative_to(iteration_dir)
+
+
+def test_fresh_workspace_initialization_sets_local_git_identity(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    workspace = tmp_path / "workspace"
+    source.mkdir()
+    (source / "code_agent.yaml").write_text("type: agent\n", encoding="utf-8")
+
+    assert init_workspace(source, workspace) is True
+    assert subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=workspace, capture_output=True, check=False
+    ).returncode == 0
+    assert subprocess.run(
+        ["git", "config", "--get", "user.name"], cwd=workspace,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip() == "AHE Runner"
