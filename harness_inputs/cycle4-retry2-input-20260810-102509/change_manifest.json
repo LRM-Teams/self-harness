@@ -1,0 +1,54 @@
+{
+  "stage": "cycle-4-retry2-input",
+  "basis": "manual reward-only repair after the stopped cycle-4 retry reached 19/26 pass (73.1%)",
+  "changes": [
+    {
+      "id": "retry2-1",
+      "type": "context_reliability",
+      "description": "Compact shell output above 20k characters to a bounded head/tail view while preserving complete stdout/stderr paths; compact old tool results when model context reaches 55%.",
+      "files": [
+        "tools/shell_tools/run_shell_command.py",
+        "middleware/context_compaction/**",
+        "code_agent.yaml"
+      ],
+      "evidence": "Two failed cleaned traces accumulated about 284k and 604k tokens and ended without a normal final response."
+    },
+    {
+      "id": "retry2-2",
+      "type": "delivery_reliability",
+      "description": "Move sparse delivery checkpoints to 5/10/15 minutes; detect successful temporary candidates; conditionally continue only when explicit task paths remain untouched or a required background job is pending.",
+      "files": [
+        "middleware/execution_guard.py",
+        "code_agent.yaml"
+      ],
+      "evidence": "A publicly verified candidate was left in a temporary command instead of being written to /app/out.html, and another task ended immediately after starting a required background install."
+    },
+    {
+      "id": "retry2-3",
+      "type": "semantic_evidence",
+      "description": "Conditionally grant one recovery turn when a required runtime is unavailable and only syntax/interface checks support the final response.",
+      "files": [
+        "middleware/execution_guard.py"
+      ],
+      "evidence": "A distributed PyTorch implementation finalized after syntax/AST checks without executing output or gradient behavior."
+    },
+    {
+      "id": "retry2-4",
+      "type": "download_and_provenance",
+      "description": "After download timeout, require resumable authoritative transfer or a verifiable mirror, recommend quiet progress logs, and warn against synthetic/fake substitutes.",
+      "files": [
+        "middleware/execution_guard.py",
+        "tool_descriptions/run_shell_command.tool.yaml"
+      ],
+      "evidence": "A slow official CIFAR-10 download timed out and was replaced by locally generated patterned records, invalidating the resulting accuracy."
+    }
+  ],
+  "preserved_contracts": [
+    "original run_shell_command schema and success/error/timeout/background result keys",
+    "explicit Bash execution",
+    "normal final responses with delivered paths and adequate evidence are not intercepted",
+    "reward-only information isolation",
+    "the stopped retry experiment remains immutable and is not resumed"
+  ],
+  "deliberate_non_change": "No benchmark-task dataset or dependency is silently baked into E2B templates. Task-specific predownloads would change the Terminal-Bench environment; resumable authoritative downloads are improved without changing benchmark inputs."
+}
