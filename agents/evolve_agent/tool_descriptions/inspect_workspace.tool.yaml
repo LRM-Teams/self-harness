@@ -1,0 +1,16 @@
+type: tool
+name: inspect_workspace
+description: >-
+  Safely inspect or validate the harness workspace without arbitrary shell
+  access. Use status to see changed files, diff to review the current patch,
+  and validate before completing the evolution.
+input_schema:
+  type: object
+  properties:
+    action:
+      type: string
+      enum: [status, diff, validate]
+      description: Fixed workspace operation to run.
+  required: [action]
+  additionalProperties: false
+  $schema: http://json-schema.org/draft-07/schema#

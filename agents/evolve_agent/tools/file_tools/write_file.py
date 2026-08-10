@@ -12,7 +12,7 @@ from typing import Any
 
 from nexau.archs.main_sub.agent_state import AgentState
 from nexau.archs.sandbox import BaseSandbox, SandboxStatus
-from nexau.archs.tool.builtin._sandbox_utils import get_sandbox, resolve_path
+from tools._sandbox_utils import get_sandbox, resolve_path
 
 
 def _detect_line_ending(content: str) -> str:
@@ -93,7 +93,7 @@ def write_file(
             }
 
         # Resolve path (relative -> sandbox work_dir)
-        resolved_path = resolve_path(file_path, sandbox)
+        resolved_path = resolve_path(file_path, sandbox, access="write")
 
         # Check if it's a directory
         if sandbox.file_exists(resolved_path) and sandbox.get_file_info(resolved_path).is_directory:

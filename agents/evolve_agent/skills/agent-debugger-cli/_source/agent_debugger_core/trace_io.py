@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Tuple
 
@@ -11,7 +12,8 @@ class TraceIOError(Exception):
 
 
 def _runtime_dir_default() -> Path:
-    return Path.home() / ".adb" / "runtime"
+    configured = os.environ.get("ADB_RUNTIME_DIR", "").strip()
+    return Path(configured) if configured else Path.home() / ".adb" / "runtime"
 
 
 def _hash_path(trace_path: Path) -> str:

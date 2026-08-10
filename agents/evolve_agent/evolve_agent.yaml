@@ -39,9 +39,9 @@ tools:
   - name: list_directory
     yaml_path: ./tool_descriptions/list_directory.tool.yaml
     binding: tools.file_tools:list_directory
-  - name: run_shell_command
-    yaml_path: ./tool_descriptions/run_shell_command.tool.yaml
-    binding: tools.shell_tools:run_shell_command
+  - name: inspect_workspace
+    yaml_path: ./tool_descriptions/inspect_workspace.tool.yaml
+    binding: tools.workspace_tools.inspect_workspace:inspect_workspace
   - name: web_search
     yaml_path: ./tool_descriptions/WebSearch.tool.yaml
     binding: tools.web_tools:google_web_search

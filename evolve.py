@@ -14,6 +14,7 @@ import argparse
 import collections
 import concurrent.futures
 import copy
+import hashlib
 import json
 import math
 import os
@@ -1155,6 +1156,7 @@ DEFAULT_SUMMARY_QUERY_K1 = (
 @dataclass
 class TaskAnalysisJob:
     task_name: str
+    safe_id: str = ""
     trace_paths: list[Path] = field(default_factory=list)
     trace_rewards: list[float] = field(default_factory=list)
     trial_dirs: list[Path] = field(default_factory=list)
@@ -1171,6 +1173,7 @@ class TaskAnalysisJob:
 FEEDBACK_MODE_REWARD_ONLY = "reward_only"
 FEEDBACK_MODE_VERIFIER_OUTPUT = "verifier_output"
 _VALID_FEEDBACK_MODES = {FEEDBACK_MODE_REWARD_ONLY, FEEDBACK_MODE_VERIFIER_OUTPUT}
+SANITIZED_FEEDBACK_DIRNAME = "sanitized_feedback"
 
 
 def _feedback_mode(config: dict) -> str:
@@ -1251,14 +1254,74 @@ def _read_safe_process_metadata(trial_dir: Path) -> str:
     return json.dumps(metadata, sort_keys=True, separators=(",", ":"))
 
 
+def _safe_task_id(task_name: str) -> str:
+    """Return a traversal-safe, stable identifier without discarding task identity."""
+    prefix = re.sub(r"[^A-Za-z0-9_-]+", "-", task_name).strip("-") or "task"
+    digest = hashlib.sha256(task_name.encode("utf-8")).hexdigest()[:10]
+    return f"{prefix[:64]}-{digest}"
+
+
+def _stage_reward_only_jobs(
+    jobs: list[TaskAnalysisJob],
+    iteration_dir: Path,
+) -> Path:
+    """Copy only agent-owned traces into a fresh sanitized feedback bundle.
+
+    Raw Harbor trial directories never become tool-visible paths. Verdicts and
+    process metadata are written from already-allowlisted scalar fields.
+    """
+    bundle_dir = iteration_dir / "input" / SANITIZED_FEEDBACK_DIRNAME
+    if bundle_dir.exists():
+        raise RuntimeError(f"Refusing to reuse sanitized feedback bundle: {bundle_dir}")
+    traces_root = bundle_dir / "traces"
+    traces_root.mkdir(parents=True, exist_ok=False)
+
+    manifest_jobs: list[dict[str, object]] = []
+    for job in jobs:
+        job.safe_id = _safe_task_id(job.task_name)
+        staged_paths: list[Path] = []
+        task_trace_dir = traces_root / job.safe_id
+        task_trace_dir.mkdir(parents=False, exist_ok=False)
+        for index, source in enumerate(job.trace_paths, 1):
+            if source.name not in {
+                "nexau_in_memory_tracer.cleaned.json",
+                "nexau_in_memory_tracer.json",
+            } or source.parent.name != "agent":
+                raise RuntimeError(f"Unexpected agent trace source for {job.safe_id}")
+            target = task_trace_dir / f"trace{index:02d}.json"
+            shutil.copyfile(source, target)
+            staged_paths.append(target)
+
+        job.trace_paths = staged_paths
+        job.trial_dirs = []
+        if any(job.verifier_outputs):
+            raise RuntimeError("Reward-only staging received verifier output")
+        manifest_jobs.append({
+            "task_name": job.task_name,
+            "safe_id": job.safe_id,
+            "verdicts": [
+                "TIMEOUT" if reward < 0 else ("PASS" if reward >= 1.0 else "FAIL")
+                for reward in job.trace_rewards
+            ],
+            "trace_paths": [
+                str(path.relative_to(iteration_dir.parent.parent)) for path in staged_paths
+            ],
+            "process_metadata": [json.loads(item) if item else {} for item in job.process_metadata],
+        })
+
+    manifest = {"feedback_mode": FEEDBACK_MODE_REWARD_ONLY, "jobs": manifest_jobs}
+    (bundle_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return bundle_dir
+
+
 _adb_path: str | None = None
 
 
 def _find_adb() -> str | None:
     """Locate the adb executable, checking common pip script directories."""
-    found = shutil.which("adb")
-    if found:
-        return found
     for candidate_dir in [
         Path(sys.executable).parent,  # venv/bin or /usr/bin
         Path.home() / ".local" / "bin",
@@ -1266,12 +1329,36 @@ def _find_adb() -> str | None:
         candidate = candidate_dir / "adb"
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
-    return None
+    return shutil.which("adb")
+
+
+def _bundled_adb_source() -> Path:
+    return EVOLVE_AGENT_DIR / "skills" / "agent-debugger-cli" / "_source"
+
+
+def _adb_command() -> list[str]:
+    source = _bundled_adb_source()
+    if (source / "agent_debugger_core" / "cli" / "adb.py").is_file():
+        return [sys.executable, "-m", "agent_debugger_core.cli.adb"]
+    return [_adb_path or "adb"]
+
+
+def _adb_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    source = _bundled_adb_source()
+    if source.is_dir():
+        existing = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(source) + (os.pathsep + existing if existing else "")
+    env["AHE_HOME"] = str(PROJECT_DIR)
+    return env
 
 
 def _ensure_adb_installed() -> bool:
     """Install adb from bundled _source/ if not already available. Returns True on success."""
     global _adb_path
+    if (_bundled_adb_source() / "agent_debugger_core" / "cli" / "adb.py").is_file():
+        _adb_path = None
+        return True
     _adb_path = _find_adb()
     if _adb_path:
         return True
@@ -1548,13 +1635,21 @@ def _run_single_adb_ask(job: TaskAnalysisJob, config: dict, k: int = 1,
     if extra_query_prefix:
         query = extra_query_prefix + "\n" + query
 
-    adb = _adb_path or "adb"
-    cmd = [adb, "ask", "-t"] + [str(p) for p in job.trace_paths]
+    cmd = _adb_command() + ["ask", "-t"] + [str(p) for p in job.trace_paths]
     if job.trace_type:
         cmd += ["--trace-type", job.trace_type]
     cmd += ["-q", query, "--format", "json"]
 
-    env = os.environ.copy()
+    env = _adb_subprocess_env()
+    if not job.trace_paths:
+        raise RuntimeError("Debugger job has no staged traces")
+    runtime_dir = job.trace_paths[0].parent / ".normalized"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    env["ADB_RUNTIME_DIR"] = str(runtime_dir)
+    env["AHE_REWARD_ONLY_POLICY"] = "1"
+    env["AHE_TOOL_READ_ROOTS"] = str(runtime_dir)
+    env["AHE_TOOL_WRITE_ROOTS"] = ""
+    env["SANDBOX_WORK_DIR"] = str(runtime_dir)
     llm_cfg = config.get("llm", {})
     if llm_cfg.get("model"):
         env["QA_MODEL_NAME"] = llm_cfg["model"]
@@ -1619,6 +1714,7 @@ def _run_single_adb_ask(job: TaskAnalysisJob, config: dict, k: int = 1,
 
     return {
         "task_name": job.task_name,
+        "safe_id": job.safe_id,
         "mode": job.mode,
         "n_pass": job.n_pass,
         "n_fail": job.n_fail,
@@ -1715,7 +1811,8 @@ def _write_debugger_analyse(
             n_total = r["n_pass"] + r["n_fail"] + n_to
             one_liner = _extract_one_liner(r["response"])
             body_lines.append(
-                f"- **{r['task_name']}** ({n_to}/{n_total} timed out): {one_liner}"
+                f"- **{r['task_name']}** ({n_to}/{n_total} timed out; "
+                f"detail `{r.get('safe_id') or _safe_task_id(r['task_name'])}.md`): {one_liner}"
             )
         body_lines.append("")
 
@@ -1725,7 +1822,8 @@ def _write_debugger_analyse(
             n_total = r["n_pass"] + r["n_fail"] + r.get("n_timeout", 0)
             one_liner = _extract_one_liner(r["response"])
             body_lines.append(
-                f"- **{r['task_name']}** ({r['n_pass']}/{n_total} pass): {one_liner}"
+                f"- **{r['task_name']}** ({r['n_pass']}/{n_total} pass; "
+                f"detail `{r.get('safe_id') or _safe_task_id(r['task_name'])}.md`): {one_liner}"
             )
         body_lines.append("")
 
@@ -1733,7 +1831,13 @@ def _write_debugger_analyse(
         names = ", ".join(r["task_name"] for r in summary_results)
         body_lines.append(f"### Summary (all pass): {len(summary_results)} tasks\n")
         body_lines.append(f"{names}\n")
-        body_lines.append("(All rollouts passed — no per-task analysis included. Read `detail/{{task}}.md` if needed.)\n")
+        body_lines.append("(All rollouts passed — per-task details use the safe IDs listed in the detail index.)\n")
+
+    body_lines.append("### Detail index\n")
+    for r in results:
+        safe_id = r.get("safe_id") or _safe_task_id(r["task_name"])
+        body_lines.append(f"- `{r['task_name']}` → `detail/{safe_id}.md`")
+    body_lines.append("")
 
     try:
         detail_rel = detail_dir.relative_to(iteration_dir.parent.parent)
@@ -1777,7 +1881,11 @@ def _write_debugger_analyse(
                 except (ValueError, OSError):
                     rv = 0.0
                 reward_label = "PASS" if rv >= 1.0 else "FAIL"
-            detail_lines.append(f"- **trace{idx+1:02d}** ({reward_label}): `{tp}`")
+            try:
+                display_path = p.relative_to(iteration_dir.parent.parent)
+            except ValueError:
+                display_path = p.name
+            detail_lines.append(f"- **trace{idx+1:02d}** ({reward_label}): `{display_path}`")
         detail_lines.append("")
 
         detail_lines.append("## QA Analysis\n")
@@ -1801,7 +1909,8 @@ def _write_debugger_analyse(
             detail_lines.append(f"### trace{idx+1:02d} ({label})\n")
             detail_lines.append(f"```\n{vout_show}\n```\n")
 
-        task_path = detail_dir / f"{r['task_name']}.md"
+        safe_id = r.get("safe_id") or _safe_task_id(r["task_name"])
+        task_path = detail_dir / f"{safe_id}.md"
         task_path.write_text("\n".join(detail_lines), encoding="utf-8")
 
     return analyse_dir, query_snippet
@@ -1830,6 +1939,9 @@ def run_parallel_adb_ask(
     if not jobs:
         print("[adb] no tasks to analyze")
         return None
+    if feedback_mode == FEEDBACK_MODE_REWARD_ONLY:
+        bundle_dir = _stage_reward_only_jobs(jobs, iteration_dir)
+        print(f"[adb] staged reward-only bundle: {bundle_dir.relative_to(iteration_dir.parent.parent)}")
 
     max_workers = config.get("max_concurrent", 10)
     n_debug = sum(1 for j in jobs if j.mode == "debug" and not j.is_timeout)
@@ -1867,6 +1979,7 @@ def run_parallel_adb_ask(
                     print(f"  [exc] {job.task_name}: {e}")
                     results.append({
                         "task_name": job.task_name,
+                        "safe_id": job.safe_id,
                         "mode": job.mode,
                         "n_pass": job.n_pass,
                         "n_fail": job.n_fail,
@@ -2665,6 +2778,7 @@ def build_evolution_query(
     strategy_hint: str | None = None,
     prev_variant_comparison: dict | None = None,
     workspace_path: str | None = None,
+    feedback_mode: str = FEEDBACK_MODE_REWARD_ONLY,
 ) -> str:
     """Build the evolution agent query.
 
@@ -2677,12 +2791,17 @@ def build_evolution_query(
 
     # -- 1. Current Iteration Overview --
     lines.append("## 1. Current Iteration Overview")
-    try:
-        runs_dir = iteration_dir.parent
-        results_rel = job_dir.relative_to(runs_dir.parent)
-    except ValueError:
-        results_rel = job_dir.name
-    lines.append(f"- Results path: `{results_rel}/`")
+    if feedback_mode == FEEDBACK_MODE_REWARD_ONLY:
+        safe_rel = f"runs/iteration_{iteration:03d}/input/{SANITIZED_FEEDBACK_DIRNAME}"
+        lines.append(f"- Safe feedback path: `{safe_rel}/`")
+        lines.append("- Raw evaluator artifacts are intentionally unavailable; use only staged agent traces and allowlisted metadata.")
+    else:
+        try:
+            runs_dir = iteration_dir.parent
+            results_rel = job_dir.relative_to(runs_dir.parent)
+        except ValueError:
+            results_rel = job_dir.name
+        lines.append(f"- Results path: `{results_rel}/`")
 
     if k > 1:
         trial_stats = stats.get("trial_stats", {})
@@ -2700,7 +2819,7 @@ def build_evolution_query(
         lines.append(f"- Pass rate: **{stats['pass_rate']:.1%}** ({stats['n_pass']}/{stats['n_total']})")
         lines.append(f"- Pass: {stats['n_pass']} | Fail: {stats['n_fail']} | Exception: {stats['n_exception']}")
 
-    if stats["exception_types"]:
+    if feedback_mode != FEEDBACK_MODE_REWARD_ONLY and stats["exception_types"]:
         exc_str = ", ".join(f"{ek}: {ev}" for ek, ev in stats["exception_types"].items())
         lines.append(f"- Exception types: {exc_str}")
     n_timeout_tasks = len(stats.get("timeout_tasks", set()))
@@ -2776,20 +2895,23 @@ def build_evolution_query(
 
     if pure_exc_tasks:
         lines.append(f"\n### ⚠️ Infrastructure Exceptions ({len(pure_exc_tasks)}, not agent issues, please ignore)")
-        exc_by_type: dict[str, list[str]] = {}
-        for tn in pure_exc_tasks:
-            et = "Unknown"
-            try:
-                td = _find_trial_dir(job_dir, tn)
-                if td:
-                    ep = td / "exception.txt"
-                    if ep.exists():
-                        et = _extract_exception_type(ep.read_text(errors="replace"))
-            except OSError:
-                pass
-            exc_by_type.setdefault(et, []).append(tn)
-        for et, tasks in exc_by_type.items():
-            lines.append(f"- {et} ({len(tasks)}): {', '.join(tasks[:10])}")
+        if feedback_mode == FEEDBACK_MODE_REWARD_ONLY:
+            lines.append("- Exception status only: " + ", ".join(pure_exc_tasks))
+        else:
+            exc_by_type: dict[str, list[str]] = {}
+            for tn in pure_exc_tasks:
+                et = "Unknown"
+                try:
+                    td = _find_trial_dir(job_dir, tn)
+                    if td:
+                        ep = td / "exception.txt"
+                        if ep.exists():
+                            et = _extract_exception_type(ep.read_text(errors="replace"))
+                except OSError:
+                    pass
+                exc_by_type.setdefault(et, []).append(tn)
+            for et, tasks in exc_by_type.items():
+                lines.append(f"- {et} ({len(tasks)}): {', '.join(tasks[:10])}")
 
     # -- 3. Cross-Iteration Change Matrix --
     if diff is not None:
@@ -2869,8 +2991,8 @@ def build_evolution_query(
         lines.append(f"\n## 4. Agent Debugger Analysis (LLM-powered root cause analysis)")
         lines.append(adb_overview)
         analyse_rel = f"runs/iteration_{iteration:03d}/input/analysis"
-        lines.append(f"\nFor full per-task analysis: `read_file {analyse_rel}/detail/{{task_name}}.md`")
-        lines.append("For raw traces: see trace paths listed in each detail file.")
+        lines.append(f"\nFor full per-task analysis, use the safe detail ID listed in `{analyse_rel}/overview.md`.")
+        lines.append("Staged agent-owned traces are listed in each detail file; raw evaluator paths are unavailable.")
 
     # -- 5. Historical Trends --
     if scores_trend and len(scores_trend) >= 2:
@@ -2990,7 +3112,10 @@ def build_evolution_query(
         lines.append(f"**Important**: 'Partial pass' tasks are your highest-leverage targets. Compare passing vs failing rollouts of the same task to find why one succeeded and the other failed, then make the successful strategy the reliable default. This is the fastest path to higher pass@1.")
     else:
         lines.append("**Important**: Use pass rate as the optimization target. Timed-out tasks should be analyzed — understand why the agent ran out of time.")
-    lines.append("**Important**: Task classification and basic diagnostics are provided above. For deeper failed task analysis, read the corresponding `agent/nexau_in_memory_tracer.cleaned.json` in the trial directory.")
+    if feedback_mode == FEEDBACK_MODE_REWARD_ONLY:
+        lines.append("**Important**: For deeper analysis, use only the safe detail index and staged agent-owned traces under `input/sanitized_feedback/`.")
+    else:
+        lines.append("**Important**: Task classification and basic diagnostics are provided above. For deeper failed task analysis, read the corresponding agent trace in the trial directory.")
     if stability and stability.get("unstable"):
         lines.append(f"**Important**: The following {len(stability['unstable'])} unstable tasks should NOT be optimization targets: {stability['unstable'][:10]}...")
 
@@ -3104,6 +3229,25 @@ def run_evolve_agent(config: dict, exp_dir: Path, iteration: int,
 
     os.environ["EVOLVE_WORK_DIR"] = str(exp_dir)
 
+    policy_keys = (
+        "AHE_REWARD_ONLY_POLICY",
+        "AHE_TOOL_READ_ROOTS",
+        "AHE_TOOL_WRITE_ROOTS",
+    )
+    previous_policy = {key: os.environ.get(key) for key in policy_keys}
+    feedback_mode = _feedback_mode(config.get("agent_debugger", {}))
+    if feedback_mode == FEEDBACK_MODE_REWARD_ONLY:
+        workspace_dir = (exp_dir / "workspace").resolve()
+        analysis_dir = (iteration_dir / "input" / "analysis").resolve()
+        bundle_dir = (iteration_dir / "input" / SANITIZED_FEEDBACK_DIRNAME).resolve()
+        if not analysis_dir.is_dir() or not bundle_dir.is_dir():
+            raise RuntimeError("Reward-only evolve agent requires fresh sanitized analysis and feedback bundle")
+        os.environ["AHE_REWARD_ONLY_POLICY"] = "1"
+        os.environ["AHE_TOOL_READ_ROOTS"] = os.pathsep.join(
+            [str(workspace_dir), str(analysis_dir), str(bundle_dir)]
+        )
+        os.environ["AHE_TOOL_WRITE_ROOTS"] = str(workspace_dir)
+
     if evolve_agent_dir not in sys.path:
         sys.path.insert(0, evolve_agent_dir)
 
@@ -3117,9 +3261,13 @@ def run_evolve_agent(config: dict, exp_dir: Path, iteration: int,
 
     adb_llm = config.get("agent_debugger", {}).get("llm", {})
     if adb_llm and _ensure_adb_installed():
-        adb = _adb_path or "adb"
         adb_cfg_json = json.dumps({"llm": adb_llm})
-        r = subprocess.run([adb, "config", adb_cfg_json], capture_output=True, text=True)
+        r = subprocess.run(
+            _adb_command() + ["config", adb_cfg_json],
+            capture_output=True,
+            text=True,
+            env=_adb_subprocess_env(),
+        )
         if r.returncode == 0:
             print(f"[adb] pre-configured LLM: model={adb_llm.get('model')}", flush=True)
         else:
@@ -3142,20 +3290,27 @@ def run_evolve_agent(config: dict, exp_dir: Path, iteration: int,
     flush_thread.start()
 
     try:
-        raw_result = agent.run(
-            message=query,
-            context={
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "username": "agentic-harness-engineering",
-                "working_directory": str(exp_dir),
-                "workspace_path": "workspace",
-                "iteration": iteration,
-                "adb_llm": adb_llm if adb_llm else None,
-            },
-        )
+        try:
+            raw_result = agent.run(
+                message=query,
+                context={
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "username": "agentic-harness-engineering",
+                    "working_directory": str(exp_dir),
+                    "workspace_path": "workspace",
+                    "iteration": iteration,
+                    "adb_llm": adb_llm if adb_llm else None,
+                },
+            )
+        finally:
+            flush_stop.set()
+            flush_thread.join(timeout=2)
     finally:
-        flush_stop.set()
-        flush_thread.join(timeout=2)
+        for key, value in previous_policy.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     if isinstance(raw_result, tuple):
         result = raw_result[0]
@@ -3455,9 +3610,13 @@ def run_evolve_agent_on_variant(config: dict, exp_dir: Path,
 
     adb_llm = config.get("agent_debugger", {}).get("llm", {})
     if adb_llm and _ensure_adb_installed():
-        adb = _adb_path or "adb"
         adb_cfg_json = json.dumps({"llm": adb_llm})
-        r = subprocess.run([adb, "config", adb_cfg_json], capture_output=True, text=True)
+        r = subprocess.run(
+            _adb_command() + ["config", adb_cfg_json],
+            capture_output=True,
+            text=True,
+            env=_adb_subprocess_env(),
+        )
         if r.returncode == 0:
             print(f"[adb] pre-configured LLM for {variant_label}", flush=True)
 
@@ -3839,6 +3998,7 @@ def run_best_of_n_evolution(
             strategy_hint=hint,
             prev_variant_comparison=prev_variant_comparison,
             workspace_path=workspace_rel,
+            feedback_mode=_feedback_mode(config.get("agent_debugger", {})),
         )
 
         variant_prep.append({
@@ -4593,6 +4753,7 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
                     scores_trend=scores_trend,
                     change_evaluation=change_eval,
                     adb_overview=adb_overview,
+                    feedback_mode=_feedback_mode(adb_config),
                 )
                 print(
                     f"[evolve] Phase 3: evolution (iteration {iteration}, job_dir={job_dir.name})",

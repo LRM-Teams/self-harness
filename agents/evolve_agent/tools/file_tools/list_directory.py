@@ -12,7 +12,7 @@ from typing import Any
 
 from nexau.archs.main_sub.agent_state import AgentState
 from nexau.archs.sandbox import SandboxStatus
-from nexau.archs.tool.builtin._sandbox_utils import get_sandbox, resolve_path
+from tools._sandbox_utils import get_sandbox, resolve_path
 
 
 def _should_ignore(filename: str, patterns: list[str] | None) -> bool:

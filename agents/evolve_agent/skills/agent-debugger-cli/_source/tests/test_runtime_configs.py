@@ -19,11 +19,7 @@ def test_agent_config_shape():
     assert cfg["max_iterations"] == 25
     assert "complete_task" in cfg["stop_tools"]
     tool_names = {t["name"] for t in cfg["tools"]}
-    assert tool_names == {
-        "read_file", "write_file", "replace", "search_file_content",
-        "glob", "list_directory", "run_shell_command",
-        "web_search", "web_read", "complete_task",
-    }
+    assert tool_names == {"read_file", "complete_task"}
 
 
 def test_tool_descriptions_all_present():

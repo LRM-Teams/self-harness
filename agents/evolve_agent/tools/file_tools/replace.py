@@ -14,7 +14,7 @@ from typing import Any
 
 from nexau.archs.main_sub.agent_state import AgentState
 from nexau.archs.sandbox import SandboxStatus
-from nexau.archs.tool.builtin._sandbox_utils import get_sandbox, resolve_path
+from tools._sandbox_utils import get_sandbox, resolve_path
 
 
 def _detect_line_ending(content: str) -> str:
@@ -336,7 +336,7 @@ def replace(
         sandbox = get_sandbox(agent_state)
 
         # Resolve path (relative -> sandbox work_dir)
-        resolved_path = resolve_path(file_path, sandbox)
+        resolved_path = resolve_path(file_path, sandbox, access="write")
 
         # Check if file exists
         file_exists = sandbox.file_exists(resolved_path)

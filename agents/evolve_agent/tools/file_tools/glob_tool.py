@@ -13,7 +13,7 @@ from typing import Any
 
 from nexau.archs.main_sub.agent_state import AgentState
 from nexau.archs.sandbox import BaseSandbox, SandboxStatus
-from nexau.archs.tool.builtin._sandbox_utils import get_sandbox, resolve_path
+from tools._sandbox_utils import get_sandbox, resolve_path, reward_only_policy_enabled
 
 # Default exclusions matching gemini-cli
 DEFAULT_EXCLUDES = [
@@ -82,6 +82,13 @@ def glob(
                     "message": "The 'pattern' parameter cannot be empty.",
                     "type": "INVALID_PATTERN",
                 },
+            }
+
+        if reward_only_policy_enabled() and Path(pattern).is_absolute():
+            return {
+                "content": "Reward-only path policy denied an absolute glob pattern.",
+                "returnDisplay": "Error: Path access denied",
+                "error": {"message": "Absolute glob denied", "type": "PATH_ACCESS_DENIED"},
             }
 
         # Determine search directory
