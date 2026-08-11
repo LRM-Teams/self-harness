@@ -1462,6 +1462,192 @@ def _prepare_pi_reward_only_inputs(
     print(f"[pi] Staged reward-only inputs for {len(jobs)} tasks", flush=True)
 
 
+def _load_pi_staged_debug_jobs(
+    exp_dir: Path,
+    iteration_dir: Path,
+) -> list[TaskAnalysisJob]:
+    """Reconstruct debugger jobs exclusively from the sanitized bundle."""
+    bundle_dir = (iteration_dir / "input" / SANITIZED_FEEDBACK_DIRNAME).resolve()
+    manifest_path = bundle_dir / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Invalid Pi reward-only manifest: {manifest_path}") from exc
+    if manifest.get("feedback_mode") != FEEDBACK_MODE_REWARD_ONLY:
+        raise RuntimeError("Pi Debug Agent requires a reward-only sanitized manifest")
+
+    jobs: list[TaskAnalysisJob] = []
+    for item in manifest.get("jobs", []):
+        if not isinstance(item, dict):
+            continue
+        task_name = str(item.get("task_name", ""))
+        safe_id = str(item.get("safe_id", ""))
+        if not task_name or safe_id != _safe_task_id(task_name):
+            raise RuntimeError("Sanitized Pi manifest contains an invalid task identifier")
+
+        trace_paths: list[Path] = []
+        for raw_path in item.get("trace_paths", []):
+            trace_path = (exp_dir / str(raw_path)).resolve()
+            if not trace_path.is_relative_to(bundle_dir) or not trace_path.is_file():
+                raise RuntimeError(f"Invalid staged Pi trace path for {safe_id}")
+            trace_paths.append(trace_path)
+        verdicts = [str(value).upper() for value in item.get("verdicts", [])]
+        if len(trace_paths) != len(verdicts) or not trace_paths:
+            raise RuntimeError(f"Incomplete staged Pi traces for {safe_id}")
+        if any(value not in {"PASS", "FAIL", "TIMEOUT"} for value in verdicts):
+            raise RuntimeError(f"Invalid staged Pi verdict for {safe_id}")
+
+        rewards = [1.0 if value == "PASS" else (-1.0 if value == "TIMEOUT" else 0.0)
+                   for value in verdicts]
+        process_metadata = [
+            json.dumps(value, sort_keys=True, separators=(",", ":"))
+            if isinstance(value, dict) else ""
+            for value in item.get("process_metadata", [])
+        ]
+        process_metadata.extend([""] * (len(trace_paths) - len(process_metadata)))
+        n_pass = verdicts.count("PASS")
+        n_fail = verdicts.count("FAIL")
+        n_timeout = verdicts.count("TIMEOUT")
+        jobs.append(TaskAnalysisJob(
+            task_name=task_name,
+            safe_id=safe_id,
+            trace_paths=trace_paths,
+            trace_rewards=rewards,
+            process_metadata=process_metadata[:len(trace_paths)],
+            verifier_outputs=[""] * len(trace_paths),
+            n_pass=n_pass,
+            n_fail=n_fail,
+            n_timeout=n_timeout,
+            is_timeout=n_timeout > 0,
+            mode="debug" if n_fail or n_timeout else "summary",
+        ))
+    return jobs
+
+
+def run_parallel_pi_debug_agents(
+    *,
+    config: dict,
+    exp_dir: Path,
+    iteration_dir: Path,
+    iteration: int,
+) -> str:
+    """Run one isolated, read-only Pi Debug session per staged task."""
+    from agents.pi_runtime import run_pi_agent
+
+    adb_config = config.get("agent_debugger", {})
+    if _feedback_mode(adb_config) != FEEDBACK_MODE_REWARD_ONLY:
+        raise RuntimeError("Pi Debug Agent currently requires feedback_mode=reward_only")
+    jobs = _load_pi_staged_debug_jobs(exp_dir, iteration_dir)
+    if not jobs:
+        raise RuntimeError("Pi Debug Agent found no staged tasks")
+
+    llm = get_llm_config(config, role="evolve")
+    ca_cert_path = _resolve_optional_project_path(config.get("pi", {}).get("ca_cert_path"))
+    sessions_root = iteration_dir / "pi_agents" / "debug"
+    sessions_root.mkdir(parents=True, exist_ok=True)
+    timeout_seconds = float(adb_config.get("timeout_per_task", 600))
+    max_workers = max(1, int(adb_config.get("max_concurrent", 4)))
+
+    def _run_one(job: TaskAnalysisJob) -> dict:
+        session_dir = sessions_root / job.safe_id
+        response_path = session_dir / "response.md"
+        if response_path.is_file():
+            response = response_path.read_text(encoding="utf-8")
+        else:
+            labels = [
+                "TIMEOUT" if reward < 0 else ("PASS" if reward >= 1.0 else "FAIL")
+                for reward in job.trace_rewards
+            ]
+            trace_lines = [
+                f"- trace{index:02d} ({label}): `{path}`"
+                for index, (path, label) in enumerate(zip(job.trace_paths, labels), 1)
+            ]
+            metadata_lines = [
+                f"- trace{index:02d}: {metadata}"
+                for index, metadata in enumerate(job.process_metadata, 1)
+                if metadata
+            ]
+            query = "\n".join([
+                f"Analyze task `{job.task_name}` for iteration {iteration}.",
+                f"Rollouts: {job.n_pass} PASS, {job.n_fail} FAIL, {job.n_timeout} TIMEOUT.",
+                "Read every trace below before diagnosing:",
+                *trace_lines,
+                "Allowlisted boolean/numeric process metadata (if present):",
+                *(metadata_lines or ["- none"]),
+                "Return only the structured diagnostic report required by your system prompt.",
+            ])
+            try:
+                result = run_pi_agent(
+                    query=query,
+                    cwd=iteration_dir,
+                    output_dir=session_dir,
+                    system_prompt_path=PROJECT_DIR / "agents" / "pi_debug_agent" / "systemprompt.md",
+                    prompt_context={},
+                    model=llm["model"],
+                    base_url=llm["base_url"],
+                    api_key=llm["api_key"],
+                    ca_cert_path=ca_cert_path,
+                    read_roots=job.trace_paths,
+                    write_roots=[],
+                    tools=["read"],
+                    timeout_seconds=timeout_seconds,
+                )
+                response = result.text or "[pi-debug error] empty response"
+            except Exception as exc:
+                response = f"[pi-debug error] {type(exc).__name__}: {exc}"
+            if not response.startswith("[pi-debug"):
+                session_dir.mkdir(parents=True, exist_ok=True)
+                response_path.write_text(response, encoding="utf-8")
+
+        return {
+            "task_name": job.task_name,
+            "safe_id": job.safe_id,
+            "mode": job.mode,
+            "n_pass": job.n_pass,
+            "n_fail": job.n_fail,
+            "n_timeout": job.n_timeout,
+            "is_timeout": job.is_timeout,
+            "response": response,
+            "trace_paths": [str(path) for path in job.trace_paths],
+            "trace_rewards": list(job.trace_rewards),
+            "verifier_outputs": [],
+        }
+
+    print(
+        f"[pi-debug] Starting {len(jobs)} independent Pi sessions "
+        f"(max_concurrent={max_workers})",
+        flush=True,
+    )
+    results: list[dict] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_run_one, job): job for job in jobs}
+        for future in concurrent.futures.as_completed(futures):
+            job = futures[future]
+            result = future.result()
+            results.append(result)
+            status = "ok" if not result["response"].startswith("[pi-debug") else "error"
+            print(f"  [pi-debug:{status}] {job.task_name}", flush=True)
+
+    results.sort(key=lambda value: (value["mode"] == "summary", -value["n_fail"]))
+    _, overview = _write_debugger_analyse(results, iteration_dir, iteration)
+    failed_sessions = [
+        value["task_name"] for value in results
+        if value["response"].startswith("[pi-debug")
+    ]
+    if failed_sessions:
+        raise RuntimeError(
+            f"Pi Debug Agent failed for {len(failed_sessions)} task(s); "
+            "successful task sessions are reusable on resume"
+        )
+    marker = iteration_dir / "input" / "analysis" / "pi-debug-complete.json"
+    marker.write_text(
+        json.dumps({"iteration": iteration, "sessions": len(results)}, indent=2),
+        encoding="utf-8",
+    )
+    print(f"[pi-debug] Completed {len(results)} independent sessions", flush=True)
+    return overview
+
+
 _adb_path: str | None = None
 
 
@@ -3139,6 +3325,13 @@ def build_evolution_query(
         lines.append(f"\nFor full per-task analysis, use the safe detail ID listed in `{analyse_rel}/overview.md`.")
         lines.append("Staged agent-owned traces are listed in each detail file; raw evaluator paths are unavailable.")
 
+    explore_report = iteration_dir / "input" / "explore" / "report.md"
+    if explore_report.is_file():
+        explore_rel = f"runs/iteration_{iteration:03d}/input/explore/report.md"
+        lines.append("\n## Pi Explore Agent Research")
+        lines.append(f"- Independent research report: `{explore_rel}`")
+        lines.append("- Treat this report as fallible evidence; validate recommendations against the current harness before editing.")
+
     # -- 5. Historical Trends --
     if scores_trend and len(scores_trend) >= 2:
         if k > 1:
@@ -3393,6 +3586,7 @@ def _run_pi_evolve_agent(
     workspace_dir = (exp_dir / workspace_path).resolve()
     analysis_dir = (iteration_dir / "input" / "analysis").resolve()
     bundle_dir = (iteration_dir / "input" / SANITIZED_FEEDBACK_DIRNAME).resolve()
+    explore_dir = (iteration_dir / "input" / "explore").resolve()
     feedback_mode = _feedback_mode(config.get("agent_debugger", {}))
 
     if feedback_mode == FEEDBACK_MODE_REWARD_ONLY:
@@ -3403,6 +3597,8 @@ def _run_pi_evolve_agent(
                 + ", ".join(str(path) for path in missing)
             )
         read_roots = [workspace_dir, analysis_dir, bundle_dir]
+        if explore_dir.is_dir():
+            read_roots.append(explore_dir)
     else:
         read_roots = [exp_dir.resolve()]
 
@@ -4537,8 +4733,95 @@ def run_post_evolve(config: dict, exp_dir: Path, workspace_dir: Path,
 # Explore-Agent Parallel Support
 # ---------------------------------------------------------------------------
 
-def _run_explore_agent_standalone(config: dict, exp_dir: Path) -> None:
+def _run_pi_explore_agent(
+    config: dict,
+    exp_dir: Path,
+    workspace_dir: Path,
+    iteration_dir: Path,
+    iteration: int,
+) -> str:
+    """Run one isolated, read-only Pi Explore session and persist its report."""
+    from agents.pi_runtime import run_pi_agent
+
+    report_path = iteration_dir / "input" / "explore" / "report.md"
+    if report_path.is_file():
+        print(f"[pi-explore] Reusing {report_path.relative_to(exp_dir)}", flush=True)
+        return report_path.read_text(encoding="utf-8")
+
+    llm = get_llm_config(config, role="evolve")
+    explore_config = config.get("explore_agent", {})
+    ca_cert_path = _resolve_optional_project_path(config.get("pi", {}).get("ca_cert_path"))
+    session_dir = iteration_dir / "pi_agents" / "explore"
+    timeout_seconds = float(explore_config.get("timeout_minutes", 30)) * 60
+
+    web_sources = explore_config.get("web_sources", [])
+    research_topics = [
+        f"- {item.get('focus') or item.get('url')}"
+        for item in web_sources
+        if isinstance(item, dict) and (item.get("focus") or item.get("url"))
+    ]
+    if not research_topics:
+        research_topics = [
+            "- coding-agent tool use, context management, and verification",
+            "- E2B sandbox isolation and long-running task reliability",
+            "- general Terminal-Bench agent architecture (never task solutions)",
+        ]
+
+    adapter_paths = [
+        PROJECT_DIR / "agents" / "pi_harbor_agent.py",
+        PROJECT_DIR / "agents" / "pi_e2b_environment.py",
+        PROJECT_DIR / "agents" / "pi_runtime.py",
+        PROJECT_DIR / "agents" / "pi_extensions",
+        PROJECT_DIR / "agents" / "pi_debug_agent" / "systemprompt.md",
+        PROJECT_DIR / "agents" / "pi_evolve_agent" / "systemprompt.md",
+    ]
+    query = "\n".join([
+        f"Research general improvements for the current Pi harness in iteration {iteration}.",
+        f"Current evolvable harness: `{workspace_dir}`",
+        "Pi integration files you may inspect:",
+        *[f"- `{path}`" for path in adapter_paths],
+        "Research these bounded topics with serper_search:",
+        *research_topics,
+        "Return only the structured research report required by your system prompt.",
+    ])
+    print(f"[pi-explore] Starting independent Pi session (iteration {iteration})", flush=True)
+    result = run_pi_agent(
+        query=query,
+        cwd=exp_dir,
+        output_dir=session_dir,
+        system_prompt_path=PROJECT_DIR / "agents" / "pi_explore_agent" / "systemprompt.md",
+        prompt_context={},
+        model=llm["model"],
+        base_url=llm["base_url"],
+        api_key=llm["api_key"],
+        ca_cert_path=ca_cert_path,
+        read_roots=[workspace_dir, *adapter_paths],
+        write_roots=[],
+        tools=["read", "serper_search"],
+        timeout_seconds=timeout_seconds,
+    )
+    report = result.text or "[pi-explore error] empty response"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        f"# Pi Explore Report — Iteration {iteration}\n\n{report.strip()}\n",
+        encoding="utf-8",
+    )
+    print(f"[pi-explore] Report saved to {report_path.relative_to(exp_dir)}", flush=True)
+    return report
+
+
+def _run_explore_agent_standalone(
+    config: dict,
+    exp_dir: Path,
+    workspace_dir: Path,
+    iteration_dir: Path,
+    iteration: int,
+) -> None:
     """Run explore-agent standalone in skip_eval mode (synchronous)."""
+    if _agent_backend(config) == "pi":
+        _run_pi_explore_agent(config, exp_dir, workspace_dir, iteration_dir, iteration)
+        return
+
     from agents.explore_agent.run import run_explore_agent, register_explore_agent_skills
 
     agent_llm = get_llm_config(config, role="agent")
@@ -4568,6 +4851,8 @@ def _run_harbor_with_explore_agent(
     workspace_dir: Path,
     agent_config_filename: str,
     jobs_dir: Path,
+    iteration_dir: Path,
+    iteration: int,
 ) -> Path:
     """Run harbor eval + explore-agent in parallel, return job_dir.
 
@@ -4575,22 +4860,27 @@ def _run_harbor_with_explore_agent(
     Evolve agent only starts after both complete (by then explore-agent skills are available).
     """
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-    from agents.explore_agent.run import run_explore_agent, register_explore_agent_skills
 
     ml_timeout = config.get("explore_agent", {}).get("timeout_minutes", 30)
     ml_start_time = time.monotonic()
+    pi_backend = _agent_backend(config) == "pi"
 
-    agent_llm = get_llm_config(config, role="agent")
-    evolve_llm = get_llm_config(config, role="evolve")
-    ml_model = config.get("explore_agent", {}).get("model") or evolve_llm["model"]
+    if pi_backend:
+        ml_model = get_llm_config(config, role="evolve")["model"]
+    else:
+        from agents.explore_agent.run import run_explore_agent, register_explore_agent_skills
 
-    set_llm_env(agent_llm)
-    os.environ["EXPLORE_AGENT_MODEL"] = ml_model
-    os.environ["EXPLORE_AGENT_WORK_DIR"] = str(exp_dir)
+        agent_llm = get_llm_config(config, role="agent")
+        evolve_llm = get_llm_config(config, role="evolve")
+        ml_model = config.get("explore_agent", {}).get("model") or evolve_llm["model"]
 
-    ml_agent_patch = build_explore_agent_patch(config)
-    if ml_agent_patch:
-        config = deep_merge(config, {"explore_agent_patch": ml_agent_patch})
+        set_llm_env(agent_llm)
+        os.environ["EXPLORE_AGENT_MODEL"] = ml_model
+        os.environ["EXPLORE_AGENT_WORK_DIR"] = str(exp_dir)
+
+        ml_agent_patch = build_explore_agent_patch(config)
+        if ml_agent_patch:
+            config = deep_merge(config, {"explore_agent_patch": ml_agent_patch})
 
     print(f"\n[parallel] Starting harbor eval + explore-agent in parallel (ml_model={ml_model}, timeout={ml_timeout}min)")
 
@@ -4598,7 +4888,17 @@ def _run_harbor_with_explore_agent(
     harbor_future = pool.submit(
         run_harbor, config, workspace_dir, agent_config_filename, jobs_dir,
     )
-    ml_future = pool.submit(run_explore_agent, config, exp_dir)
+    if pi_backend:
+        ml_future = pool.submit(
+            _run_pi_explore_agent,
+            config,
+            exp_dir,
+            workspace_dir,
+            iteration_dir,
+            iteration,
+        )
+    else:
+        ml_future = pool.submit(run_explore_agent, config, exp_dir)
 
     job_dir = harbor_future.result()
 
@@ -4607,7 +4907,10 @@ def _run_harbor_with_explore_agent(
     try:
         ml_success = ml_future.result(timeout=ml_remaining)
         if ml_success:
-            print("[explore-agent] Done, skills ready")
+            if pi_backend:
+                print("[pi-explore] Done, independent research report ready")
+            else:
+                print("[explore-agent] Done, skills ready")
         else:
             print("[explore-agent] Warning: not all skills produced, continuing with existing skills")
     except FuturesTimeoutError:
@@ -4615,7 +4918,8 @@ def _run_harbor_with_explore_agent(
     except Exception as e:
         print(f"[explore-agent] Error: {e}, continuing with existing skills")
 
-    register_explore_agent_skills(exp_dir)
+    if not pi_backend:
+        register_explore_agent_skills(exp_dir)
     pool.shutdown(wait=False, cancel_futures=True)
 
     return job_dir
@@ -4781,18 +5085,26 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
                         skip_eval = False
 
                         if iteration == 1 and ml_enabled:
-                            from agents.explore_agent.run import register_explore_agent_skills, ML_SKILL_NAMES
-                            skills_dir = exp_dir / "evolve_agent" / "skills"
-                            existing = [s for s in ML_SKILL_NAMES if (skills_dir / s / "SKILL.md").exists()]
-                            if existing:
-                                print(f"[explore-agent] Skills already exist ({len(existing)}/{len(ML_SKILL_NAMES)}), skipping re-run")
-                                register_explore_agent_skills(exp_dir)
+                            if _agent_backend(config) == "pi":
+                                _run_explore_agent_standalone(
+                                    config, exp_dir, workspace_dir, iteration_dir, iteration,
+                                )
                             else:
-                                _run_explore_agent_standalone(config, exp_dir)
+                                from agents.explore_agent.run import register_explore_agent_skills, ML_SKILL_NAMES
+                                skills_dir = exp_dir / "evolve_agent" / "skills"
+                                existing = [s for s in ML_SKILL_NAMES if (skills_dir / s / "SKILL.md").exists()]
+                                if existing:
+                                    print(f"[explore-agent] Skills already exist ({len(existing)}/{len(ML_SKILL_NAMES)}), skipping re-run")
+                                    register_explore_agent_skills(exp_dir)
+                                else:
+                                    _run_explore_agent_standalone(
+                                        config, exp_dir, workspace_dir, iteration_dir, iteration,
+                                    )
 
                     elif iteration == 1 and ml_enabled:
                         job_dir = _run_harbor_with_explore_agent(
                             config, exp_dir, workspace_dir, agent_config_filename, benchmark_dir,
+                            iteration_dir, iteration,
                         )
                     else:
                         job_dir = run_harbor(config, workspace_dir, agent_config_filename, benchmark_dir)
@@ -4913,13 +5225,41 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
             # Phase 2.5a: Agent Debugger QA analysis
             adb_overview = None
             adb_config = config.get("agent_debugger", {})
+            if (
+                _agent_backend(config) == "pi"
+                and _feedback_mode(adb_config) == FEEDBACK_MODE_REWARD_ONLY
+                and not reusing_bon_winner
+            ):
+                _prepare_pi_reward_only_inputs(
+                    config=config,
+                    job_dir=job_dir,
+                    task_results=stats["task_results"],
+                    iteration_dir=iteration_dir,
+                    iteration=iteration,
+                    timeout_tasks=stats.get("timeout_tasks"),
+                )
+
             if adb_config.get("enabled") and not reusing_bon_winner:
                 existing_overview = iteration_dir / "input" / "analysis" / "overview.md"
-                if existing_overview.exists():
+                pi_debug_marker = (
+                    iteration_dir / "input" / "analysis" / "pi-debug-complete.json"
+                )
+                can_reuse = existing_overview.exists() and (
+                    _agent_backend(config) != "pi" or pi_debug_marker.exists()
+                )
+                if can_reuse:
                     overview_text = existing_overview.read_text(encoding="utf-8")
                     lines_raw = overview_text.split("\n", 1)
                     adb_overview = lines_raw[1].strip() if len(lines_raw) > 1 else overview_text.strip()
-                    print(f"[adb] Reusing existing analysis from {existing_overview.relative_to(exp_dir)}")
+                    label = "pi-debug" if _agent_backend(config) == "pi" else "adb"
+                    print(f"[{label}] Reusing existing analysis from {existing_overview.relative_to(exp_dir)}")
+                elif _agent_backend(config) == "pi":
+                    adb_overview = run_parallel_pi_debug_agents(
+                        config=config,
+                        exp_dir=exp_dir,
+                        iteration_dir=iteration_dir,
+                        iteration=iteration,
+                    )
                 else:
                     print(
                         f"[adb] Starting agent debugger phase "
@@ -4935,20 +5275,6 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
                         timeout_tasks=stats.get("timeout_tasks"),
                         k=k,
                     )
-
-            if (
-                _agent_backend(config) == "pi"
-                and _feedback_mode(adb_config) == FEEDBACK_MODE_REWARD_ONLY
-                and not reusing_bon_winner
-            ):
-                _prepare_pi_reward_only_inputs(
-                    config=config,
-                    job_dir=job_dir,
-                    task_results=stats["task_results"],
-                    iteration_dir=iteration_dir,
-                    iteration=iteration,
-                    timeout_tasks=stats.get("timeout_tasks"),
-                )
 
             _iter_timing["analysis_min"] = round((time.monotonic() - _phase2_start) / 60, 1)
             _phase3_start = time.monotonic()

@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,8 @@ def run_pi_agent(
     read_roots: list[Path] | None = None,
     write_roots: list[Path] | None = None,
     write_files: list[Path] | None = None,
+    tools: list[str] | None = None,
+    timeout_seconds: float | None = None,
 ) -> PiRunResult:
     if "/" not in model:
         raise ValueError("Pi model must use provider/model format")
@@ -138,6 +141,11 @@ def run_pi_agent(
     if ca_cert_path:
         env["NODE_EXTRA_CA_CERTS"] = str(ca_cert_path.resolve())
 
+    enabled_tools = tools or ["read", "write", "edit", "serper_search"]
+    unsupported_tools = set(enabled_tools) - {"read", "write", "edit", "serper_search"}
+    if unsupported_tools:
+        raise ValueError(f"Unsupported restricted Pi tools: {sorted(unsupported_tools)}")
+
     command = [
         pi_bin,
         "--mode", "json",
@@ -146,14 +154,24 @@ def run_pi_agent(
         "--no-extensions",
         "--no-skills",
         "--no-prompt-templates",
-        "--tools", "read,write,edit,serper_search",
+        "--tools", ",".join(enabled_tools),
         "--extension", str(PROJECT_DIR / "agents" / "pi_extensions" / "visibility_guard.ts"),
-        "--extension", str(PROJECT_DIR / "agents" / "pi_code_agent" / "extensions" / "serper.ts"),
-        "--provider", provider,
-        "--model", model_id,
-        "--system-prompt", system_prompt,
-        query,
     ]
+    if "serper_search" in enabled_tools:
+        command.extend(
+            [
+                "--extension",
+                str(PROJECT_DIR / "agents" / "pi_code_agent" / "extensions" / "serper.ts"),
+            ]
+        )
+    command.extend(
+        [
+            "--provider", provider,
+            "--model", model_id,
+            "--system-prompt", system_prompt,
+            query,
+        ]
+    )
 
     events: list[dict[str, Any]] = []
     with events_path.open("w", encoding="utf-8") as out, stderr_path.open(
@@ -168,17 +186,35 @@ def run_pi_agent(
             text=True,
             bufsize=1,
         )
-        assert process.stdout is not None
-        for line in process.stdout:
-            out.write(line)
-            out.flush()
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                events.append(event)
-        returncode = process.wait()
+        timed_out = threading.Event()
+
+        def _terminate_on_timeout() -> None:
+            timed_out.set()
+            process.kill()
+
+        timer = None
+        if timeout_seconds is not None and timeout_seconds > 0:
+            timer = threading.Timer(timeout_seconds, _terminate_on_timeout)
+            timer.daemon = True
+            timer.start()
+        try:
+            assert process.stdout is not None
+            for line in process.stdout:
+                out.write(line)
+                out.flush()
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict):
+                    events.append(event)
+            returncode = process.wait()
+        finally:
+            if timer is not None:
+                timer.cancel()
+
+    if timed_out.is_set():
+        raise TimeoutError(f"Pi exceeded {timeout_seconds}s; see {stderr_path}")
 
     messages = _messages_from_events(events)
     trace_path.write_text(

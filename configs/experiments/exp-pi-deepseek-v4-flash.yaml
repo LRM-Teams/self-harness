@@ -1,6 +1,6 @@
 _base: "../base.yaml"
 _name: "pi-deepseek-v4-flash-independent"
-_description: "Independent AHE experiment: Pi code/evolution agents on Lenovo DeepSeek V4 Flash, E2B, and Serper"
+_description: "Independent AHE experiment: Pi code/debug/explore/evolution agents on Lenovo DeepSeek V4 Flash, E2B, and Serper"
 _tags: ["pi", "deepseek-v4-flash", "e2b", "serper", "terminal-bench-2"]
 
 agent_backend: "pi"
@@ -36,15 +36,21 @@ harbor:
 # Pi's own YAML is not a NexAU AgentConfig; do not inject NexAU llm_config keys.
 code_agent_patch: null
 
-# The old auxiliary agents are NexAU-specific. Disable them so every active
-# agent in this experiment is Pi; Pi evolution consumes AHE's native analysis
-# and sanitized reward-only traces directly.
+# Every active role uses Pi with a role-specific system prompt. Explore runs
+# once alongside the first Harbor evaluation; Debug runs one isolated session
+# per staged task; Evolution consumes their reports and sanitized traces.
 explore_agent:
-  enabled: false
+  enabled: true
+  backend: "pi"
+  timeout_minutes: 30
 
 agent_debugger:
-  enabled: false
+  enabled: true
+  backend: "pi"
   feedback_mode: reward_only
+  max_concurrent: 4
+  max_tasks: 90
+  timeout_per_task: 600
 
 best_of_n:
   enabled: false

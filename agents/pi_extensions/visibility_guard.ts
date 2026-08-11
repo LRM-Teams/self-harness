@@ -35,7 +35,7 @@ export default function (pi: ExtensionAPI) {
     if (event.toolName === "bash") {
       return {
         block: true,
-        reason: "Shell execution is disabled for the reward-only evolution agent.",
+        reason: "Shell execution is disabled for this restricted Pi meta-agent.",
       };
     }
 

@@ -15,16 +15,43 @@ virtual environment are not shared.
 ## Active agent stack
 
 - Harbor/E2B code agent: custom `agents.pi_harbor_agent:PiAgent`
-- Evolution agent: local Pi subprocess through `agents/pi_runtime.py`
+- Debug agent: one read-only local Pi subprocess per staged task
+- Explore agent: one read-only local Pi research subprocess in iteration 1
+- Evolution agent: one restricted local Pi subprocess per evolution attempt
 - Model: `lenovo-deepseek-v4-flash/DeepSeek-V4-Flash-0731`
-- Search: `serper_search`, implemented as a Pi extension
+- Search: `serper_search` for Code, Explore, and Evolution, implemented as a Pi extension
 - E2B concurrency: 4
 - Feedback policy: reward-only; Pi sees copied agent traces and safe aggregate
   metadata, never raw verifier output or hidden tests
 
-The old NexAU-specific explore-agent and agent-debugger are disabled in this
-experiment. Their useful roles are covered by Pi's Serper tool and AHE's native
-sanitized trace staging, so every agent process that is active is Pi.
+The old NexAU-specific auxiliary agents are bypassed in this experiment. All
+four active roles use Pi and have separate system prompts:
+
+```text
+Code      agents/pi_code_agent/systemprompt.md
+Debug     agents/pi_debug_agent/systemprompt.md
+Explore   agents/pi_explore_agent/systemprompt.md
+Evolution agents/pi_evolve_agent/systemprompt.md
+```
+
+Every invocation uses `--no-session`. Each benchmark task has its own E2B
+sandbox and Pi process; every Debug task, Explore run, and Evolution run gets a
+separate local Pi process and output directory. Roles exchange only persisted,
+policy-controlled artifacts, never conversation state.
+
+The iteration flow is:
+
+```text
+Pi Explore ────────────────┐
+                          ├─> Pi Debug (per task) ─> Pi Evolution
+Pi Code in Harbor/E2B ─────┘       ^                     |
+        └─> reward-only traces ─────┘                     └─> next harness
+```
+
+Explore and Harbor run concurrently in iteration 1. Debug can read only one
+task's staged agent traces per session. Evolution can read the workspace,
+Explore report, Debug reports, aggregate analysis, and sanitized traces. Only
+Evolution may modify the harness workspace.
 
 ## Configuration
 
