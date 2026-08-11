@@ -1,0 +1,95 @@
+_base: "../base.yaml"
+_name: "gpt55-reward-only-cycle5-continuation-fix-20260811-091756"
+_description: "Infrastructure-adjusted cycle 5 continuation using the regression-repaired harness: rerun nine regressions and complete seventeen unfinished tasks"
+_tags: ["gpt55", "cycle5", "continuation", "regression-repair", "reward-only", "terminal-bench-2", "infrastructure-adjusted", "deduplicated-stitch"]
+
+dataset: "terminal-bench@2.0"
+source_config_dir: "harness_inputs/cycle6-input-20260811-091756"
+target_pass_rate: 1.01
+max_iterations: 1
+
+# Exactly nine pass-to-fail regressions plus seventeen tasks that had no terminal
+# cycle-5 reward when the run was stopped. Combine by task name; never add these
+# 26 trials to the 72 old trials as independent samples.
+task_names:
+  - build-pmars
+  - cancel-async-tasks
+  - constraints-scheduling
+  - db-wal-recovery
+  - dna-assembly
+  - dna-insert
+  - extract-moves-from-video
+  - filter-js-from-html
+  - fix-ocaml-gc
+  - kv-store-grpc
+  - large-scale-text-editing
+  - model-extraction-relu-logits
+  - nginx-request-logging
+  - openssl-selfsigned-cert
+  - polyglot-c-py
+  - portfolio-optimization
+  - protein-assembly
+  - raman-fitting
+  - rstan-to-pystan
+  - sam-cell-seg
+  - sanitize-git-repo
+  - sparql-university
+  - sqlite-db-truncate
+  - sqlite-with-gcov
+  - torch-tensor-parallelism
+  - vulnerable-secret
+
+harbor:
+  agent: "nexau"
+  env: "e2b"
+  k: 1
+  n_concurrent: 4
+
+llm:
+  api_key: "${LLM_API_KEY}"
+  base_url: "${LLM_BASE_URL}"
+  model: "gpt-5.5"
+
+code_agent_patch:
+  tool_call_mode: openai
+  llm_config:
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+evolve_agent:
+  tool_call_mode: openai
+  llm_config:
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL}"
+    model: "gpt-5.5"
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+explore_agent:
+  enabled: true
+
+explore_agent_patch:
+  tool_call_mode: openai
+  llm_config:
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+agent_debugger:
+  enabled: true
+  feedback_mode: reward_only
+  llm:
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL}"
+    model: "gpt-5.5"
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+notify:
+  enabled: false

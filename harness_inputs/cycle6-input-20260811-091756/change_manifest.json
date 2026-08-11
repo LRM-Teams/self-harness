@@ -1,0 +1,87 @@
+{
+  "iteration": 1,
+  "changes": [
+    {
+      "id": "chg-1",
+      "type": "improvement",
+      "description": "Added middleware tracking for final-looking output artifacts written as candidates/guesses/approximations, plus a one-time recovery turn that asks for an independent confirmation before finalizing. Reinforced the same rule in the system prompt, tool description, and long-term memory.",
+      "files": [
+        "middleware/execution_guard.py",
+        "systemprompt.md",
+        "tool_descriptions/run_shell_command.tool.yaml",
+        "LongTermMEMORY.md"
+      ],
+      "failure_pattern": "Extraction, visual/geometric decoding, and quantitative fitting tasks finalized plausible candidate outputs without independent confirmation; observed in gcode-to-text writing a pangram candidate, raman-fitting writing candidate Lorentzian parameters, and likely related video/extraction failures.",
+      "predicted_fixes": [
+        "gcode-to-text",
+        "raman-fitting",
+        "extract-moves-from-video",
+        "video-processing",
+        "dna-insert"
+      ],
+      "risk_tasks": [
+        "code-from-image",
+        "financial-document-processor",
+        "log-summary-date-ranges"
+      ],
+      "constraint_level": "middleware|prompt|tool_desc|memory",
+      "why_this_component": "The failure occurred at decision/finalization time after ordinary shell commands succeeded; middleware can detect candidate artifact writes structurally and force one corrective turn, while prompt/tool/memory guidance helps the model avoid creating uncertain deliverables in the first place. A task-specific tool would be too narrow and a global final gate would risk broad regressions."
+    },
+    {
+      "id": "chg-2",
+      "type": "improvement",
+      "description": "Added a scoped final-check gate for service, Git/SSH, webserver, QEMU, host/port, and deployment-hook tasks. It injects one recovery turn before finalization requiring the exact client-facing command/URL/host/branch/path after the last cleanup/reset, not merely on-disk or local-file evidence.",
+      "files": [
+        "middleware/execution_guard.py",
+        "systemprompt.md",
+        "tool_descriptions/run_shell_command.tool.yaml",
+        "LongTermMEMORY.md"
+      ],
+      "failure_pattern": "Service and Git deployment tasks completed with incomplete or stale exact-interface evidence after cleanup/reset; configure-git-webserver verified a local file clone and 127.0.0.1 curl rather than the requested host/remote form, and git-multibranch downgraded final evidence to on-disk checks after an earlier end-to-end test.",
+      "predicted_fixes": [
+        "configure-git-webserver",
+        "git-multibranch",
+        "install-windows-3.11"
+      ],
+      "risk_tasks": [
+        "nginx-request-logging",
+        "qemu-alpine-ssh",
+        "qemu-startup",
+        "pypi-server"
+      ],
+      "constraint_level": "middleware|prompt|tool_desc|memory",
+      "why_this_component": "The correct behavior depends on recognizing a class of user requests and interrupting premature finalization only for that class. Scoped middleware avoids enabling the broad final gate for all tasks, while prompt/tool text tells the model exactly what evidence to gather."
+    },
+    {
+      "id": "chg-3",
+      "type": "improvement",
+      "description": "Strengthened the system prompt to require compact baseline implementations for single-file parser/filter/converter tasks before broad all-edge-case designs.",
+      "files": [
+        "systemprompt.md"
+      ],
+      "failure_pattern": "The filter-js-from-html timeout trace spent most time in long model generations for an over-large first implementation and later checks, despite the task being a small single-file HTML filtering script.",
+      "predicted_fixes": [
+        "filter-js-from-html"
+      ],
+      "risk_tasks": [
+        "break-filter-js-from-html",
+        "large-scale-text-editing"
+      ],
+      "constraint_level": "prompt",
+      "why_this_component": "The timeout was dominated by model-generation time rather than shell runtime, so command timeouts cannot address it directly. A prompt-level small-first rule targets generation strategy with minimal implementation risk."
+    }
+  ],
+  "continuation_repair": {
+    "label": "cycle5-regression-repair",
+    "basis": "Nine cycle-5 pass-to-fail regressions plus persistent failure traces, using only allowed agent traces and reward summaries.",
+    "changes": [
+      "Detect uncertainty only when a successful command actually writes a final artifact; do not infer it from output text or mere path mentions.",
+      "Block explicit placeholders from required final paths and keep unverified candidates under /tmp.",
+      "Back up SQLite databases, WAL files, and sidecars before the first potentially state-mutating open in recovery tasks.",
+      "Add scoped exact-schema and quantitative-threshold final checks with independent-oracle and safety-margin requirements.",
+      "Require genuinely distinct confirmation rather than repeated windows or re-fits of one ambiguous source.",
+      "Use a higher shell-progress threshold for complex recovery, training, build, vision, and fitting tasks."
+    ],
+    "evaluation_scope": "Fresh 26-task continuation: nine regressions rerun plus seventeen previously unfinished tasks. Results must be deduplicated by task and labeled infrastructure-adjusted continuation, not an official Terminal-Bench score."
+  }
+}
