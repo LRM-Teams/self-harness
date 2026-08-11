@@ -1,0 +1,64 @@
+_base: "../base.yaml"
+_name: "gpt55-reward-only-cycle5-fresh-20260811-064857"
+_description: "Infrastructure-adjusted cycle 5 evaluation of the cycle 4 automatically evolved harness, retaining baked-in recovery E2B aliases"
+_tags: ["gpt55", "cycle5", "one-evolution", "reward-only", "fresh", "terminal-bench-2", "infrastructure-adjusted", "auto-evolved-input"]
+
+dataset: "terminal-bench@2.0"
+source_config_dir: "harness_inputs/cycle5-input-20260811-064857"
+target_pass_rate: 1.01
+max_iterations: 1
+
+harbor:
+  agent: "nexau"
+  env: "e2b"
+  k: 1
+  n_concurrent: 4
+
+llm:
+  api_key: "${LLM_API_KEY}"
+  base_url: "${LLM_BASE_URL}"
+  model: "gpt-5.5"
+
+code_agent_patch:
+  tool_call_mode: openai
+  llm_config:
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+evolve_agent:
+  tool_call_mode: openai
+  llm_config:
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL}"
+    model: "gpt-5.5"
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+explore_agent:
+  enabled: true
+
+explore_agent_patch:
+  tool_call_mode: openai
+  llm_config:
+    api_type: openai_responses
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+agent_debugger:
+  enabled: true
+  feedback_mode: reward_only
+  llm:
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL}"
+    model: "gpt-5.5"
+    reasoning:
+      effort: "high"
+      summary: "detailed"
+
+notify:
+  enabled: false
