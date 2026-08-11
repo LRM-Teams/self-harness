@@ -1,0 +1,12 @@
+type: pi_agent
+name: pi_deepseek_code_agent
+system_prompt: systemprompt.md
+provider: lenovo-deepseek-v4-flash
+model: DeepSeek-V4-Flash-0731
+pi_version: 0.84.1
+tools:
+  - read
+  - bash
+  - edit
+  - write
+  - serper_search

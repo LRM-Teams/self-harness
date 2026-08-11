@@ -38,6 +38,7 @@ EVOLVE_AGENT_DIR = PROJECT_DIR / "agents" / "evolve_agent"
 EXPERIMENTS_DIR = PROJECT_DIR / "experiments"
 
 load_dotenv(PROJECT_DIR / ".env", override=True)
+load_dotenv(PROJECT_DIR / ".env.pi", override=True)
 
 _ENV_KEYS = [
     "GITHUB_TOKEN", "E2B_API_KEY", "E2B_API_URL", "E2B_DOMAIN",
@@ -416,15 +417,94 @@ def _build_harbor_cmd(config: dict, workspace_dir: Path, agent_config_filename: 
     k = int(harbor_cfg.get("k", 1))
     n_concurrent = n_concurrent_override or harbor_cfg["n_concurrent"]
 
+    # Harbor's jobs CLI exposes custom agents but not custom environments.
+    # Use its native JobConfig path when this experiment needs the prefixed Pi
+    # E2B environment, keeping the normal CLI path unchanged for existing runs.
+    if harbor_cfg.get("environment_import_path"):
+        from harbor.models.job.config import (
+            JobConfig,
+            LocalDatasetConfig,
+            OrchestratorConfig,
+            RegistryDatasetConfig,
+        )
+        from harbor.models.registry import RemoteRegistryInfo
+        from harbor.models.trial.config import AgentConfig, EnvironmentConfig
+
+        agent_kwargs = {"config_path": str(config_path)}
+        agent_kwargs.update(harbor_cfg.get("agent_kwargs", {}))
+        agent_config = AgentConfig(
+            name=None if harbor_cfg.get("agent_import_path") else harbor_cfg.get("agent"),
+            import_path=harbor_cfg.get("agent_import_path"),
+            model_name=model,
+            kwargs=agent_kwargs,
+        )
+        environment_config = EnvironmentConfig(
+            type=None,
+            import_path=harbor_cfg["environment_import_path"],
+            force_build=bool(harbor_cfg.get("force_build", False)),
+            kwargs=dict(harbor_cfg.get("environment_kwargs", {})),
+        )
+
+        datasets = []
+        if task_path:
+            resolved = Path(task_path)
+            if not resolved.is_absolute():
+                resolved = (PROJECT_DIR / resolved).resolve()
+            datasets.append(
+                LocalDatasetConfig(
+                    path=resolved,
+                    task_names=config.get("task_names") or None,
+                    exclude_task_names=config.get("exclude_task_names") or None,
+                    n_tasks=config.get("n_tasks"),
+                )
+            )
+        elif dataset:
+            dataset_name, _, dataset_version = str(dataset).partition("@")
+            datasets.append(
+                RegistryDatasetConfig(
+                    registry=RemoteRegistryInfo(),
+                    name=dataset_name,
+                    version=dataset_version or None,
+                    task_names=config.get("task_names") or None,
+                    exclude_task_names=config.get("exclude_task_names") or None,
+                    n_tasks=config.get("n_tasks"),
+                )
+            )
+        else:
+            raise ValueError("Config must specify either 'dataset' or 'path'")
+
+        job_config = JobConfig(
+            jobs_dir=iteration_dir,
+            n_attempts=k,
+            orchestrator=OrchestratorConfig(n_concurrent_trials=n_concurrent),
+            environment=environment_config,
+            agents=[agent_config],
+            datasets=datasets,
+        )
+        config_digest = hashlib.sha256(str(config_path).encode()).hexdigest()[:10]
+        job_config_path = iteration_dir / f"harbor-job-pi-{config_digest}.json"
+        job_config_path.parent.mkdir(parents=True, exist_ok=True)
+        job_config_path.write_text(job_config.model_dump_json(indent=2), encoding="utf-8")
+        return ["harbor", "run", "--config", str(job_config_path)]
+
+    agent_args = (
+        ["--agent-import-path", str(harbor_cfg["agent_import_path"])]
+        if harbor_cfg.get("agent_import_path")
+        else ["--agent", harbor_cfg["agent"]]
+    )
     cmd = [
         "harbor", "run",
-        "--agent", harbor_cfg["agent"],
+        *agent_args,
         "--env", harbor_cfg["env"],
         "--model", model,
         "--n-concurrent", str(n_concurrent),
-        "--ak", f"config_path={config_path}",
         "--jobs-dir", str(iteration_dir),
     ]
+
+    agent_kwargs = {"config_path": str(config_path)}
+    agent_kwargs.update(harbor_cfg.get("agent_kwargs", {}))
+    for key, value in agent_kwargs.items():
+        cmd.extend(["--ak", f"{key}={value}"])
 
     if k > 1:
         cmd.extend(["-k", str(k)])
@@ -472,6 +552,14 @@ def launch_harbor(config: dict, workspace_dir: Path, agent_config_filename: str,
     e2b_sandbox_timeout = config["harbor"].get("e2b_sandbox_timeout")
     if e2b_sandbox_timeout is not None:
         sub_env["E2B_SANDBOX_TIMEOUT"] = str(int(e2b_sandbox_timeout))
+
+    # Custom Harbor adapters live in this independent project.  Harbor is
+    # launched from ROOT_DIR for backwards compatibility, so make the project
+    # package importable explicitly instead of relying on the current cwd.
+    existing_pythonpath = sub_env.get("PYTHONPATH", "")
+    sub_env["PYTHONPATH"] = str(PROJECT_DIR) + (
+        os.pathsep + existing_pythonpath if existing_pythonpath else ""
+    )
 
     prev_latest = find_latest_job_dir(iteration_dir)
     started_after = prev_latest.name if prev_latest else ""
@@ -1324,6 +1412,54 @@ def _stage_reward_only_jobs(
         encoding="utf-8",
     )
     return bundle_dir
+
+
+def _prepare_pi_reward_only_inputs(
+    *,
+    config: dict,
+    job_dir: Path,
+    task_results: dict[str, str],
+    iteration_dir: Path,
+    iteration: int,
+    timeout_tasks: set[str] | None = None,
+) -> None:
+    """Stage agent-visible Pi traces without invoking the NexAU debugger agent."""
+    analysis_dir = iteration_dir / "input" / "analysis"
+    bundle_dir = iteration_dir / "input" / SANITIZED_FEEDBACK_DIRNAME
+    if analysis_dir.is_dir() and bundle_dir.is_dir():
+        return
+
+    adb_config = dict(config.get("agent_debugger", {}))
+    adb_config["feedback_mode"] = FEEDBACK_MODE_REWARD_ONLY
+    jobs = _build_adb_jobs(
+        task_results,
+        job_dir,
+        adb_config,
+        timeout_tasks=timeout_tasks,
+    )
+    if not jobs:
+        raise RuntimeError("Pi reward-only evolution found no agent-visible traces to stage")
+    if bundle_dir.exists():
+        raise RuntimeError(f"Refusing partially staged Pi feedback bundle: {bundle_dir}")
+    _stage_reward_only_jobs(jobs, iteration_dir)
+
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    n_pass = sum(1 for value in task_results.values() if value == "pass")
+    n_fail = sum(1 for value in task_results.values() if value == "fail")
+    n_exception = sum(1 for value in task_results.values() if value == "exception")
+    overview = [
+        f"# Pi reward-only analysis — iteration {iteration}",
+        "",
+        f"- PASS: {n_pass}",
+        f"- FAIL: {n_fail}",
+        f"- infrastructure/exception: {n_exception}",
+        f"- staged agent-visible task traces: {len(jobs)}",
+        "",
+        "No verifier stdout, hidden test text, expected value, or reference answer is included.",
+        "Use sanitized_feedback/manifest.json for verdicts and agent-visible trace paths.",
+    ]
+    (analysis_dir / "overview.md").write_text("\n".join(overview) + "\n", encoding="utf-8")
+    print(f"[pi] Staged reward-only inputs for {len(jobs)} tasks", flush=True)
 
 
 _adb_path: str | None = None
@@ -3229,10 +3365,90 @@ def save_evolve_trace(agent, log_dir: Path, iteration: int,
     _dump_evolve_tracer_to_disk(tracer_key)
 
 
+def _agent_backend(config: dict) -> str:
+    """Return the active agent runtime for this experiment."""
+    return str(config.get("agent_backend", "nexau")).strip().lower()
+
+
+def _resolve_optional_project_path(value: str | None) -> Path | None:
+    if not value:
+        return None
+    path = Path(value)
+    return path.resolve() if path.is_absolute() else (PROJECT_DIR / path).resolve()
+
+
+def _run_pi_evolve_agent(
+    config: dict,
+    exp_dir: Path,
+    iteration: int,
+    query: str,
+    iteration_dir: Path,
+    workspace_path: str = "workspace",
+    variant_label: str | None = None,
+) -> str:
+    """Run the evolution phase with Pi while preserving reward-only isolation."""
+    from agents.pi_runtime import run_pi_agent
+
+    evolve_llm = get_llm_config(config, role="evolve")
+    workspace_dir = (exp_dir / workspace_path).resolve()
+    analysis_dir = (iteration_dir / "input" / "analysis").resolve()
+    bundle_dir = (iteration_dir / "input" / SANITIZED_FEEDBACK_DIRNAME).resolve()
+    feedback_mode = _feedback_mode(config.get("agent_debugger", {}))
+
+    if feedback_mode == FEEDBACK_MODE_REWARD_ONLY:
+        missing = [path for path in (analysis_dir, bundle_dir) if not path.is_dir()]
+        if missing:
+            raise RuntimeError(
+                "Reward-only Pi evolution requires staged analysis and sanitized feedback: "
+                + ", ".join(str(path) for path in missing)
+            )
+        read_roots = [workspace_dir, analysis_dir, bundle_dir]
+    else:
+        read_roots = [exp_dir.resolve()]
+
+    output_dir = iteration_dir / "evolve"
+    if variant_label:
+        output_dir = output_dir / variant_label
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    pi_cfg = config.get("pi", {})
+    ca_cert_path = _resolve_optional_project_path(pi_cfg.get("ca_cert_path"))
+    print(
+        f"[evolve] Starting Pi evolution agent "
+        f"({variant_label or f'iteration {iteration}'}, model={evolve_llm['model']})...",
+        flush=True,
+    )
+    result = run_pi_agent(
+        query=query,
+        cwd=exp_dir,
+        output_dir=output_dir,
+        system_prompt_path=PROJECT_DIR / "agents" / "pi_evolve_agent" / "systemprompt.md",
+        prompt_context={
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "iteration": iteration,
+            "workspace_path": workspace_path,
+        },
+        model=evolve_llm["model"],
+        base_url=evolve_llm["base_url"],
+        api_key=evolve_llm["api_key"],
+        ca_cert_path=ca_cert_path,
+        read_roots=read_roots,
+        write_roots=[workspace_dir],
+        write_files=[exp_dir / "change_manifest.json"],
+    )
+    print(f"[evolve] Pi evolution agent completed", flush=True)
+    return result.text
+
+
 def run_evolve_agent(config: dict, exp_dir: Path, iteration: int,
                      query: str,
                      job_dir: Path, iteration_dir: Path) -> str:
     """Invoke NexAU evolve agent to analyze and improve workspace."""
+    if _agent_backend(config) == "pi":
+        return _run_pi_evolve_agent(
+            config, exp_dir, iteration, query, iteration_dir,
+        )
+
     evolve_config_path = (exp_dir / "evolve_agent" / "evolve_agent.yaml").resolve()
     evolve_agent_dir = str((exp_dir / "evolve_agent").resolve())
 
@@ -3600,6 +3816,17 @@ def run_evolve_agent_on_variant(config: dict, exp_dir: Path,
     evolution_history.md normally.  The workspace_path context variable
     tells the Jinja prompt (and the query) where the variant workspace is.
     """
+    if _agent_backend(config) == "pi":
+        return _run_pi_evolve_agent(
+            config,
+            exp_dir,
+            iteration,
+            query,
+            iteration_dir,
+            workspace_path=workspace_path,
+            variant_label=f"variant_{variant_idx}",
+        )
+
     evolve_config_path = (exp_dir / "evolve_agent" / "evolve_agent.yaml").resolve()
     evolve_agent_dir = str((exp_dir / "evolve_agent").resolve())
 
@@ -4708,6 +4935,20 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
                         timeout_tasks=stats.get("timeout_tasks"),
                         k=k,
                     )
+
+            if (
+                _agent_backend(config) == "pi"
+                and _feedback_mode(adb_config) == FEEDBACK_MODE_REWARD_ONLY
+                and not reusing_bon_winner
+            ):
+                _prepare_pi_reward_only_inputs(
+                    config=config,
+                    job_dir=job_dir,
+                    task_results=stats["task_results"],
+                    iteration_dir=iteration_dir,
+                    iteration=iteration,
+                    timeout_tasks=stats.get("timeout_tasks"),
+                )
 
             _iter_timing["analysis_min"] = round((time.monotonic() - _phase2_start) / 60, 1)
             _phase3_start = time.monotonic()

@@ -1,0 +1,53 @@
+_base: "../base.yaml"
+_name: "pi-deepseek-v4-flash-independent"
+_description: "Independent AHE experiment: Pi code/evolution agents on Lenovo DeepSeek V4 Flash, E2B, and Serper"
+_tags: ["pi", "deepseek-v4-flash", "e2b", "serper", "terminal-bench-2"]
+
+agent_backend: "pi"
+dataset: "terminal-bench@2.0"
+source_config_dir: "agents/pi_code_agent"
+agent_config_filename: "pi_agent.yaml"
+target_pass_rate: 0.95
+max_iterations: 1
+
+llm:
+  api_key: "${LENOVO_DEEPSEEK_V4_FLASH_API_KEY}"
+  base_url: "https://modelfactory.lenovo.com/service-large-600-1777255649450/llm/v1"
+  model: "lenovo-deepseek-v4-flash/DeepSeek-V4-Flash-0731"
+
+pi:
+  ca_cert_path: ".secrets/lenovo-modelfactory-ca.pem"
+
+harbor:
+  agent: "pi"
+  agent_import_path: "agents.pi_harbor_agent:PiAgent"
+  agent_kwargs:
+    api_key_env: "LLM_API_KEY"
+    ca_cert_path: "/home/jianghp3/agentic-harness-engineering-pi-deepseek/.secrets/lenovo-modelfactory-ca.pem"
+  env: "e2b"
+  environment_import_path: "agents.pi_e2b_environment:PiE2BEnvironment"
+  environment_kwargs:
+    template_prefix: "ahe-pi-v1"
+  k: 1
+  n_concurrent: 4
+  force_build: false
+  e2b_sandbox_timeout: 3600
+
+# Pi's own YAML is not a NexAU AgentConfig; do not inject NexAU llm_config keys.
+code_agent_patch: null
+
+# The old auxiliary agents are NexAU-specific. Disable them so every active
+# agent in this experiment is Pi; Pi evolution consumes AHE's native analysis
+# and sanitized reward-only traces directly.
+explore_agent:
+  enabled: false
+
+agent_debugger:
+  enabled: false
+  feedback_mode: reward_only
+
+best_of_n:
+  enabled: false
+
+notify:
+  enabled: false

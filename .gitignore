@@ -1,6 +1,9 @@
 /experiments/
 .venv/
 .env
+.env.pi
+.secrets/
+.pi-runtime/
 __pycache__/
 *.egg-info/
 *.pyc
