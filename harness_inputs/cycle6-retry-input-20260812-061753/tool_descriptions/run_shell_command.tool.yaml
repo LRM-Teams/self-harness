@@ -1,0 +1,82 @@
+type: tool
+name: run_shell_command
+description: >-
+  This tool executes a given shell command as `bash -c <command>`. To run a
+  command in the background, set the `is_background` parameter to true. Do NOT
+  use `&` to background commands. Command is executed as a subprocess that leads
+  its own process group. Command process group can be terminated as `kill --
+  -PGID` or signaled as `kill -s SIGNAL -- -PGID`.
+
+  For long jobs, prefer background execution plus short shell polls (`ps`, `tail`,
+  `test -f`, parsing log milestones) over blind multi-minute `sleep` commands.
+  Use the `timeout_ms` parameter on foreground exploratory commands so a bad
+  experiment cannot consume the whole task budget; after any timeout or expensive
+  run, narrow the next check or choose a simpler viable approach. This agent has
+  no separate background-management tool; inspect the returned stdout_file/stderr_file
+  paths with later run_shell_command calls. For clean-room checks, preserve required
+  deliverables with backups or temp output paths; do not delete final required
+  artifacts before an expensive rerun unless replacement is guaranteed and verified.
+  Large foreground output is compacted to a head/tail view; the returned stdout_file
+  and stderr_file retain the complete logs. For large downloads, redirect progress to
+  a log and use resumable transfers (`wget -c` or `curl -C -`). After a timeout,
+  resume the authoritative source or use a provenance-verified mirror; never replace
+  a required real dataset/model/archive with synthetic data.
+  Before declaring success, verify the exact user-required invocation and final
+  artifact set. If a post-mutation parser, compiler, or client-facing check passes,
+  stop rather than spending another turn on optional robustness work. Keep uncertain
+  non-code answer/data candidates under /tmp; source-code deliverables may be built
+  and improved incrementally at their required paths. The system prompt supplies
+  task-domain validation rules; follow only those relevant to the current request.
+
+  The following information is returned:
+
+  Output: Combined stdout/stderr. Can be `(empty)` or partial on timeout, error,
+  and for any unwaited background processes.
+
+  Exit Code: Only included if non-zero (command failed).
+
+  Error: Only included if a process-level error occurred (e.g., spawn failure).
+
+  Signal: Only included if process was terminated by a signal.
+
+  Background PIDs: Only included if background processes were started.
+
+  Process Group PGID: Only included if available.
+input_schema:
+  type: object
+  properties:
+    command:
+      type: string
+      description: Exact bash command to execute as `bash -c <command>`
+    description:
+      type: string
+      description: >-
+        Brief description of the command for the user. Be specific and concise.
+        Ideally a single sentence. Can be up to 3 sentences for clarity. No line
+        breaks.
+    is_background:
+      type: boolean
+      description: >-
+        (OPTIONAL) Set to true if this command should be run in the background
+        (e.g. for long-running servers or watchers). The command will be started,
+        allowed to run for a brief moment to check for immediate errors, and then
+        moved to the background. If not provided, defaults to false.
+    timeout_ms:
+      type: integer
+      description: >-
+        (OPTIONAL) Foreground command timeout in milliseconds. Use explicit short
+        budgets for speculative inspections, validation loops, searches, and model
+        experiments (typical: 30000-90000). Reserve the default 5-minute timeout
+        only for a known required build/job, and prefer is_background=true plus
+        milestone polling for anything expected to run longer than about 2 minutes.
+      minimum: 1
+    dir_path:
+      type: string
+      description: >-
+        (OPTIONAL) The path of the directory to run the command in. If not
+        provided, the project root directory is used. Must be a directory within
+        the workspace and must already exist.
+  required:
+    - command
+  additionalProperties: false
+  $schema: http://json-schema.org/draft-07/schema#
