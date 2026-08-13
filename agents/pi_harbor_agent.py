@@ -81,6 +81,8 @@ class PiAgent(BaseAgent):
         base_url: str | None = None,
         api_key_env: str = "LLM_API_KEY",
         ca_cert_path: str | Path | None = None,
+        local_node_path: str | Path | None = None,
+        local_pi_package_dir: str | Path | None = None,
         version: str = "0.84.1",
         *args: Any,
         **kwargs: Any,
@@ -96,6 +98,16 @@ class PiAgent(BaseAgent):
         self._base_url = str(base_url or os.environ.get("LLM_BASE_URL", ""))
         self._api_key_env = api_key_env
         self._ca_cert_path = Path(ca_cert_path).resolve() if ca_cert_path else None
+        self._local_node_path = (
+            Path(local_node_path).resolve() if local_node_path else None
+        )
+        self._local_pi_package_dir = (
+            Path(local_pi_package_dir).resolve() if local_pi_package_dir else None
+        )
+        if bool(self._local_node_path) != bool(self._local_pi_package_dir):
+            raise ValueError(
+                "local_node_path and local_pi_package_dir must be provided together"
+            )
         self._version = str(self._config.get("pi_version") or version)
         extensions_dir = self._config_dir / "extensions"
         self._extensions = (
@@ -179,11 +191,36 @@ class PiAgent(BaseAgent):
         setup_dir.mkdir(parents=True, exist_ok=True)
         await environment.exec(command=f"mkdir -p {_REMOTE_ROOT}/config {_REMOTE_ROOT}/extensions")
 
-        install_script = self._config_dir / "install-pi.sh"
-        if not install_script.is_file():
-            raise FileNotFoundError(f"Pi install script not found: {install_script}")
-        await environment.upload_file(install_script, f"{_REMOTE_ROOT}/install-pi.sh")
-        result = await environment.exec(command=f"bash {_REMOTE_ROOT}/install-pi.sh")
+        if self._local_node_path and self._local_pi_package_dir:
+            if not self._local_node_path.is_file():
+                raise FileNotFoundError(f"Local Node binary not found: {self._local_node_path}")
+            if not self._local_pi_package_dir.is_dir():
+                raise FileNotFoundError(
+                    f"Local Pi package not found: {self._local_pi_package_dir}"
+                )
+            remote_runtime = _REMOTE_ROOT / "runtime"
+            remote_node = remote_runtime / "bin/node"
+            remote_package = remote_runtime / "pi-package"
+            await environment.exec(
+                command=f"mkdir -p {remote_runtime}/bin {remote_package}"
+            )
+            await environment.upload_file(self._local_node_path, str(remote_node))
+            # Docker's cp semantics nest the source basename when the destination
+            # already exists.  The trailing `/.` copies the package contents so
+            # `dist/cli.js` always lands directly under `remote_package`.
+            await environment.upload_dir(f"{self._local_pi_package_dir}/.", str(remote_package))
+            result = await environment.exec(
+                command=(
+                    f"chmod +x {remote_node} && "
+                    f"{remote_node} {remote_package}/dist/cli.js --version"
+                )
+            )
+        else:
+            install_script = self._config_dir / "install-pi.sh"
+            if not install_script.is_file():
+                raise FileNotFoundError(f"Pi install script not found: {install_script}")
+            await environment.upload_file(install_script, f"{_REMOTE_ROOT}/install-pi.sh")
+            result = await environment.exec(command=f"bash {_REMOTE_ROOT}/install-pi.sh")
         (setup_dir / "return-code.txt").write_text(str(result.return_code), encoding="utf-8")
         (setup_dir / "stdout.txt").write_text(result.stdout or "", encoding="utf-8")
         (setup_dir / "stderr.txt").write_text(result.stderr or "", encoding="utf-8")
@@ -231,23 +268,38 @@ class PiAgent(BaseAgent):
         tools_flag = (
             f"--tools {shlex.quote(','.join(self._tools))} " if self._tools else ""
         )
+        pi_command = "pi"
+        if self._local_node_path and self._local_pi_package_dir:
+            pi_command = (
+                f"{_REMOTE_ROOT}/runtime/bin/node "
+                f"{_REMOTE_ROOT}/runtime/pi-package/dist/cli.js"
+            )
         command = (
-            "pi --mode json --no-session --approve "
+            "set -o pipefail; "
+            f"{pi_command} --mode json --no-session --approve "
             "--no-extensions --no-skills --no-prompt-templates "
             f"{extension_flags} "
             f"{tools_flag}"
             f"--provider {shlex.quote(self._provider)} "
             f"--model {shlex.quote(self._model_id())} "
             f"--system-prompt \"$(cat {_REMOTE_ROOT}/systemprompt.md)\" "
-            f"{shlex.quote(instruction)}"
+            f"{shlex.quote(instruction)} "
+            f"| tee {_EVENTS_FILE}"
         )
         result = await environment.exec(command=command, env=env)
-        (self.logs_dir / "pi-events.jsonl").write_text(result.stdout or "", encoding="utf-8")
+        events_path = self.logs_dir / "pi-events.jsonl"
+        # Docker bind-mounts /logs/agent to self.logs_dir.  `tee` therefore
+        # preserves partial Pi output even when Harbor cancels this coroutine
+        # at the task timeout.  Remote environments still fall back to the
+        # captured stdout after a normal return.
+        if not events_path.exists():
+            events_path.write_text(result.stdout or "", encoding="utf-8")
+        events_text = events_path.read_text(encoding="utf-8", errors="replace")
         (self.logs_dir / "pi-stderr.txt").write_text(result.stderr or "", encoding="utf-8")
         (self.logs_dir / "pi-return-code.txt").write_text(str(result.return_code), encoding="utf-8")
 
         events: list[dict[str, Any]] = []
-        for line in (result.stdout or "").splitlines():
+        for line in events_text.splitlines():
             try:
                 item = json.loads(line)
             except json.JSONDecodeError:

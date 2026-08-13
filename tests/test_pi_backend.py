@@ -111,12 +111,67 @@ def test_pi_harbor_run_uses_pinned_tools_and_writes_trace(
 
     assert "--tools read,bash,edit,write,serper_search" in environment.command
     assert "--extension /installed-agent/pi/extensions/serper.ts" in environment.command
+    assert "| tee /logs/agent/pi-events.jsonl" in environment.command
+    assert environment.command.startswith("set -o pipefail; ")
     assert "actual-secret" not in environment.command
     assert environment.env["PI_DEEPSEEK_API_KEY"] == "actual-secret"
     trace = json.loads(
         (tmp_path / "logs" / "nexau_in_memory_tracer.cleaned.json").read_text()
     )
     assert trace["messages"][-1] == {"role": "assistant", "content": "done"}
+
+
+def test_pi_harbor_can_stage_a_local_runtime(tmp_path: Path) -> None:
+    config_dir = tmp_path / "agent"
+    package_dir = tmp_path / "pi-package"
+    (package_dir / "dist").mkdir(parents=True)
+    config_dir.mkdir()
+    node_path = tmp_path / "node"
+    node_path.write_text("node", encoding="utf-8")
+    (package_dir / "dist" / "cli.js").write_text("cli", encoding="utf-8")
+    (config_dir / "pi_agent.yaml").write_text(
+        "provider: p\nmodel: m\npi_version: 0.84.1\n",
+        encoding="utf-8",
+    )
+    (config_dir / "systemprompt.md").write_text("prompt", encoding="utf-8")
+
+    agent = PiAgent(
+        logs_dir=tmp_path / "logs",
+        model_name="p/m",
+        config_path=config_dir / "pi_agent.yaml",
+        base_url="https://example.invalid/v1",
+        local_node_path=node_path,
+        local_pi_package_dir=package_dir,
+    )
+
+    class Result:
+        return_code = 0
+        stdout = "0.84.1\n"
+        stderr = ""
+
+    class Environment:
+        commands = []
+        uploaded_files = []
+        uploaded_dirs = []
+
+        async def exec(self, *, command):
+            self.commands.append(command)
+            return Result()
+
+        async def upload_file(self, source, target):
+            self.uploaded_files.append((Path(source), target))
+
+        async def upload_dir(self, source, target):
+            self.uploaded_dirs.append((Path(source), target))
+
+    environment = Environment()
+    asyncio.run(agent.setup(environment))
+
+    assert any(source == node_path for source, _ in environment.uploaded_files)
+    assert environment.uploaded_dirs == [
+        (package_dir, "/installed-agent/pi/runtime/pi-package")
+    ]
+    assert any("pi-package/dist/cli.js --version" in cmd for cmd in environment.commands)
 
 
 def test_harbor_command_uses_custom_pi_import_path(tmp_path: Path) -> None:

@@ -104,6 +104,49 @@ def test_reward_only_is_default_and_never_collects_verifier_output(tmp_path: Pat
         assert sentinel not in repr(jobs[0])
 
 
+def test_timeout_pi_jsonl_is_recovered_as_clean_agent_trace(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job"
+    trial = job_dir / "timeout-task__ABC123"
+    agent = trial / "agent"
+    verifier = trial / "verifier"
+    agent.mkdir(parents=True)
+    verifier.mkdir()
+    (agent / "pi-events.jsonl").write_text(
+        "\n".join([
+            json.dumps({
+                "type": "message_end",
+                "message": {"role": "user", "content": "agent-owned task"},
+            }),
+            json.dumps({
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": AGENT_TRACE_SENTINEL}],
+                },
+            }),
+        ]),
+        encoding="utf-8",
+    )
+    (verifier / "reward.txt").write_text("0", encoding="utf-8")
+    (verifier / "test-stdout.txt").write_text(
+        FORBIDDEN_SENTINELS["stdout"], encoding="utf-8"
+    )
+
+    jobs = _build_adb_jobs(
+        {"timeout-task": "exception"},
+        job_dir,
+        {"max_tasks": 10, "feedback_mode": FEEDBACK_MODE_REWARD_ONLY},
+        timeout_tasks={"timeout-task"},
+    )
+
+    assert len(jobs) == 1
+    recovered = jobs[0].trace_paths[0]
+    assert recovered.name == "nexau_in_memory_tracer.cleaned.json"
+    recovered_text = recovered.read_text(encoding="utf-8")
+    assert AGENT_TRACE_SENTINEL in recovered_text
+    assert FORBIDDEN_SENTINELS["stdout"] not in recovered_text
+
+
 def test_safe_metadata_uses_field_allowlist(tmp_path: Path) -> None:
     _, trial = _trial(tmp_path)
 

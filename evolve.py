@@ -1747,6 +1747,42 @@ def _build_adb_jobs(
         if not trial_dirs:
             continue
 
+        # A timed-out Pi process may never return to PiAgent.run(), but Docker's
+        # /logs bind mount still contains the JSONL streamed through `tee`.
+        # Convert only agent-owned messages to the same cleaned trace format
+        # before reward-only staging; verifier files are never read here.
+        for trial_dir, _ in trial_dirs:
+            agent_dir = trial_dir / "agent"
+            cleaned_path = agent_dir / "nexau_in_memory_tracer.cleaned.json"
+            events_path = agent_dir / "pi-events.jsonl"
+            if cleaned_path.exists() or not events_path.exists():
+                continue
+            try:
+                from agents.pi_harbor_agent import _clean_messages
+
+                events = []
+                for line in events_path.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines():
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(item, dict):
+                        events.append(item)
+                messages = _clean_messages(events)
+                if messages:
+                    cleaned_path.write_text(
+                        json.dumps(
+                            {"trace_id": trial_dir.name, "messages": messages},
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+            except (OSError, ValueError):
+                pass
+
         # Prefer .cleaned.json; if any trial lacks it, fall back to raw for all
         # (--trace-type is global per adb call, can't mix cleaned and raw).
         all_have_cleaned = all(

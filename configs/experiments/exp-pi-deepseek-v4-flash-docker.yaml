@@ -1,0 +1,16 @@
+_base: "exp-pi-deepseek-v4-flash.yaml"
+_name: "pi-deepseek-v4-flash-docker"
+_description: "Independent AHE experiment with Pi + Lenovo DeepSeek and Harbor local Docker task isolation"
+_tags: ["pi", "deepseek-v4-flash", "docker", "serper", "terminal-bench-2"]
+
+max_iterations: 1
+
+harbor:
+  env: "docker"
+  environment_import_path: null
+  environment_kwargs: null
+  agent_kwargs:
+    local_node_path: "/usr/bin/node"
+    local_pi_package_dir: "/home/jianghp3/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent"
+  k: 1
+  n_concurrent: 4

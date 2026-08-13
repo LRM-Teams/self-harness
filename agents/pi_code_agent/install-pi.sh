@@ -5,8 +5,10 @@ if command -v pi >/dev/null 2>&1 && [ "$(pi --version)" = "0.84.1" ]; then
   exit 0
 fi
 
-apt-get update
-apt-get install -y ca-certificates curl
+if ! command -v curl >/dev/null 2>&1 || [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
+fi
 
 export NVM_DIR=/root/.nvm
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
