@@ -113,3 +113,11 @@ Lenovo CA, reward-only path blocking, and the copied E2B credential. It also
 built `ahe-pi-v1-mteb-leaderboard` and completed a real temporary E2B
 `PiAgent.setup -> Pi -> DeepSeek` request; the smoke sandbox was destroyed
 afterward.
+
+## Generic candidate evolution
+
+The evaluator-agnostic population runner in `evolution/` adds three independent
+Pi search lanes, a persistent candidate graph, progressive
+exploration/exploitation, post-evaluation debugging, and retrospective
+cross-branch memory. See `docs/pi-candidate-evolution.md` and
+`configs/experiments/exp-pi-candidate-evolution-example.yaml`.

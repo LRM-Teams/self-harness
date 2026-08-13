@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 agentic-harness-engineering = "evolve:main"
+pi-candidate-evolution = "evolution.cli:main"
 
 [tool.uv]
 constraint-dependencies = ["claude-agent-sdk<0.1.49"]
@@ -30,4 +31,4 @@ agent_debugger_core = { path = "agents/evolve_agent/skills/agent-debugger-cli/_s
 py-modules = ["evolve"]
 
 [tool.setuptools.packages.find]
-include = ["agents*"]
+include = ["agents*", "evolution*"]

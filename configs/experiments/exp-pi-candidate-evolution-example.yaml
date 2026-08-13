@@ -1,0 +1,30 @@
+output_dir: "../../experiments/pi-candidate-evolution-example"
+problem_path: "../../examples/candidate-evolution/problem.md"
+candidate_entrypoint: "solution.py"
+
+pi:
+  model: "lenovo-deepseek-v4-flash/DeepSeek-V4-Flash-0731"
+  base_url: "https://modelfactory.lenovo.com/service-large-600-1777255649450/llm/v1"
+  api_key: "${LENOVO_DEEPSEEK_V4_FLASH_API_KEY}"
+  ca_cert_path: "../../.secrets/lenovo-modelfactory-ca.pem"
+  timeout_seconds: 900
+  enable_search: false
+
+evolution:
+  evaluation_budget: 64
+  branches: 3
+  generation_workers: 3
+  evaluation_workers: 1
+  stagnation_window: 6
+  invalid_window: 6
+  invalid_rate_threshold: 0.5
+  exchange_interval: 3
+  diversity_weight: 0.35
+  late_phase_fraction: 0.8
+
+evaluator:
+  import_path: "evolution.adapters.shell:ShellEvaluationAdapter"
+  kwargs:
+    validate_command: ["python", "/path/to/validate.py"]
+    evaluate_command: ["python", "/path/to/evaluate.py"]
+    timeout_seconds: 600
