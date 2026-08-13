@@ -18,6 +18,58 @@ from .scheduler import ProgressiveScheduler, SchedulerConfig
 class COBenchScheduler(ProgressiveScheduler):
     """Keep an immigrant lane early, then progressively move to crossover/refinement."""
 
+    def plan_generation(self, archive: CandidateArchive, remaining: int) -> list[LanePlan]:
+        if archive.best() is not None or not archive.evaluated:
+            return super().plan_generation(archive, remaining)
+        count = min(self.config.branches, remaining)
+        scored = [item for item in archive.evaluated if item.score is not None]
+        if not scored:
+            return super().plan_generation(archive, remaining)
+        elite = max(scored, key=lambda item: (float(item.score), item.evaluation_index or 0))
+        alternatives = [item for item in scored if item.candidate_id != elite.candidate_id]
+        diverse = max(
+            alternatives,
+            key=lambda item: (
+                float(item.score)
+                + self.config.diversity_weight
+                * (1.0 - archive.similarity(elite.candidate_id, item.candidate_id))
+            ),
+            default=None,
+        )
+        plans = [
+            LanePlan(
+                lane="elite-repair",
+                operator="repair",
+                parent_ids=(elite.candidate_id,),
+                rationale="No candidate is fully feasible; repair the highest-scoring partial solution.",
+            )
+        ]
+        if count >= 2:
+            parent = diverse or elite
+            plans.append(
+                LanePlan(
+                    lane="diverse-repair",
+                    operator="repair",
+                    parent_ids=(parent.candidate_id,),
+                    reference_ids=(elite.candidate_id,)
+                    if parent.candidate_id != elite.candidate_id
+                    else (),
+                    rationale="Repair a structurally distinct partial solution without collapsing into the elite.",
+                )
+            )
+        if count >= 3:
+            plans.append(
+                LanePlan(
+                    lane="adaptive",
+                    operator="restart",
+                    reference_ids=tuple(
+                        item for item in (elite.candidate_id, diverse.candidate_id if diverse else None) if item
+                    ),
+                    rationale="Preserve one independent immigrant while the current population is infeasible.",
+                )
+            )
+        return plans
+
     def _adaptive_plan(
         self,
         archive: CandidateArchive,

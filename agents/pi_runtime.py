@@ -74,6 +74,7 @@ def run_pi_agent(
     write_files: list[Path] | None = None,
     tools: list[str] | None = None,
     timeout_seconds: float | None = None,
+    max_tokens: int = 4096,
 ) -> PiRunResult:
     if "/" not in model:
         raise ValueError("Pi model must use provider/model format")
@@ -100,7 +101,13 @@ def run_pi_agent(
                             "supportsStore": False,
                             "maxTokensField": "max_tokens",
                         },
-                        "models": [{"id": model_id, "contextWindow": 524288, "maxTokens": 4096}],
+                        "models": [
+                            {
+                                "id": model_id,
+                                "contextWindow": 524288,
+                                "maxTokens": max_tokens,
+                            }
+                        ],
                     }
                 }
             },
@@ -229,6 +236,16 @@ def run_pi_agent(
         ),
         "",
     )
+    api_errors = [
+        str(event.get("message", {}).get("errorMessage", "Pi API error"))
+        for event in events
+        if event.get("type") == "message_end"
+        and isinstance(event.get("message"), dict)
+        and event["message"].get("role") == "assistant"
+        and event["message"].get("stopReason") == "error"
+    ]
+    if api_errors:
+        raise RuntimeError(f"Pi API error: {api_errors[-1]}; see {events_path}")
     if returncode != 0:
         raise RuntimeError(f"Pi exited with code {returncode}; see {stderr_path}")
     return PiRunResult(final_text, returncode, events_path, trace_path)

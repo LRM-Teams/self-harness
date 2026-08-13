@@ -132,6 +132,28 @@ def test_cobench_scheduler_keeps_early_immigrant_lane(tmp_path: Path) -> None:
     assert plans[2].parent_ids == ()
 
 
+def test_cobench_scheduler_repairs_best_partial_candidates(tmp_path: Path) -> None:
+    archive = CandidateArchive(tmp_path / "run")
+    scheduler = COBenchScheduler(SchedulerConfig(branches=3, evaluation_budget=64))
+    for index, (source, score) in enumerate((("slow hungarian", 0.5), ("greedy", 0.25)), 1):
+        record = archive.reserve(0, scheduler.plan_generation(archive, 1)[0])
+        (archive.artifact_dir(record.candidate_id) / "solution.py").write_text(source, encoding="utf-8")
+        archive.record_production(record.candidate_id, ProductionResult())
+        archive.record_evaluation(
+            record.candidate_id,
+            ValidationResult(True),
+            EvaluationResult(score=score, feasible=False, error_type="timeout"),
+            index,
+        )
+
+    plans = scheduler.plan_generation(archive, 3)
+
+    assert [item.operator for item in plans] == ["repair", "repair", "restart"]
+    assert plans[0].parent_ids == ("c001",)
+    assert plans[1].parent_ids == ("c002",)
+    assert plans[2].parent_ids == ()
+
+
 def test_development_view_loads_only_declared_cases_and_indices() -> None:
     @dataclass
     class Data:

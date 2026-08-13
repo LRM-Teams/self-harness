@@ -23,6 +23,7 @@ class PiEvolutionSettings:
     candidate_entrypoint: str
     ca_cert_path: Path | None = None
     timeout_seconds: float = 900
+    max_tokens: int = 4096
     enable_search: bool = False
     producer_prompt_path: Path = PROJECT_DIR / "agents" / "pi_candidate_evolution" / "producer.md"
     debugger_prompt_path: Path = PROJECT_DIR / "agents" / "pi_candidate_evolution" / "debugger.md"
@@ -51,6 +52,7 @@ class PiCandidateProducer:
                 *reference_lines,
                 f"Shared retrospective memory: `{context.memory_path}`",
                 "Do not edit parents or references. Work only inside the writable candidate directory.",
+                "Use a write/edit tool as soon as you have inspected the minimum necessary context; the candidate file, not a long narrated plan, is the deliverable.",
                 "Return a concise summary ending with `FEATURES: comma-separated algorithm mechanisms`.",
             ]
         )
@@ -81,6 +83,7 @@ class PiCandidateProducer:
             write_roots=[context.artifact_dir],
             tools=tools,
             timeout_seconds=self.settings.timeout_seconds,
+            max_tokens=self.settings.max_tokens,
         )
         entrypoint = context.artifact_dir / self.settings.candidate_entrypoint
         if not entrypoint.is_file():
@@ -128,6 +131,7 @@ class PiCandidateDebugger:
             write_roots=[],
             tools=["read"],
             timeout_seconds=self.settings.timeout_seconds,
+            max_tokens=self.settings.max_tokens,
         )
         return result.text.strip()
 
@@ -182,5 +186,6 @@ class PiExperienceCommunicator:
             write_roots=[],
             tools=["read"],
             timeout_seconds=self.settings.timeout_seconds,
+            max_tokens=self.settings.max_tokens,
         )
         return result.text.strip()

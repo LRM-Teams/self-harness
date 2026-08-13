@@ -43,6 +43,7 @@ def build_engine_from_config(
         candidate_entrypoint=str(config["candidate_entrypoint"]),
         ca_cert_path=resolve_path(config, ca_path) if ca_path else None,
         timeout_seconds=float(pi.get("timeout_seconds", 900)),
+        max_tokens=int(pi.get("max_tokens", 4096)),
         enable_search=bool(pi.get("enable_search", False)),
         **prompt_paths,
     )

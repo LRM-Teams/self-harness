@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import evolve
 from agents.pi_harbor_agent import PiAgent, _clean_messages
+from agents.pi_runtime import run_pi_agent
 from agents.pi_e2b_environment import PiE2BEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.task.config import EnvironmentConfig as TaskEnvironmentConfig
@@ -39,6 +40,37 @@ def test_pi_events_convert_to_ahe_clean_trace() -> None:
     assert messages[0] == {"role": "user", "content": "task"}
     assert messages[1]["content"] == "checking"
     assert messages[1]["tool_calls"][0]["name"] == "bash"
+
+
+def test_pi_runtime_raises_on_api_error_event(tmp_path: Path, monkeypatch) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("system", encoding="utf-8")
+    fake_pi = tmp_path / "pi"
+    fake_pi.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"error\",\"errorMessage\":\"401 status code\"}}'\n",
+        encoding="utf-8",
+    )
+    fake_pi.chmod(0o755)
+    monkeypatch.setenv("PI_BIN", str(fake_pi))
+
+    try:
+        run_pi_agent(
+            query="query",
+            cwd=tmp_path,
+            output_dir=tmp_path / "output",
+            system_prompt_path=prompt,
+            prompt_context={},
+            model="provider/model",
+            base_url="https://example.invalid",
+            api_key="secret",
+            tools=["read"],
+        )
+    except RuntimeError as exc:
+        assert "Pi API error" in str(exc)
+        assert "401 status code" in str(exc)
+    else:
+        raise AssertionError("expected Pi API error")
 
 
 def test_pi_runtime_model_config_never_contains_secret(tmp_path: Path) -> None:
@@ -450,3 +482,46 @@ def test_local_pi_runtime_always_disables_session_persistence(
     assert "actual-secret" not in " ".join(captured["command"])
     assert captured["env"]["PI_DEEPSEEK_API_KEY"] == "actual-secret"
     assert result.text == "done"
+
+
+def test_local_pi_runtime_uses_configured_output_budget(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from agents import pi_runtime
+
+    class FakeProcess:
+        def __init__(self, command, **kwargs):
+            self.stdout = iter([
+                json.dumps({
+                    "type": "message_end",
+                    "message": {"role": "assistant", "content": "done"},
+                }) + "\n"
+            ])
+
+        def wait(self):
+            return 0
+
+        def kill(self):
+            raise AssertionError("unexpected timeout")
+
+    monkeypatch.setattr(pi_runtime.shutil, "which", lambda _: "/fake/pi")
+    monkeypatch.setattr(pi_runtime.subprocess, "Popen", FakeProcess)
+    prompt = tmp_path / "system.md"
+    prompt.write_text("role prompt", encoding="utf-8")
+    output = tmp_path / "session"
+
+    pi_runtime.run_pi_agent(
+        query="work",
+        cwd=tmp_path,
+        output_dir=output,
+        system_prompt_path=prompt,
+        prompt_context={},
+        model="provider/model",
+        base_url="https://example.invalid/v1",
+        api_key="secret",
+        tools=["read"],
+        max_tokens=8192,
+    )
+
+    models = json.loads((output / "pi-config" / "models.json").read_text())
+    assert models["providers"]["provider"]["models"][0]["maxTokens"] == 8192
