@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 agentic-harness-engineering = "evolve:main"
 pi-candidate-evolution = "evolution.cli:main"
+pi-cobench-evolution = "evolution.cobench:main"
 
 [tool.uv]
 constraint-dependencies = ["claude-agent-sdk<0.1.49"]

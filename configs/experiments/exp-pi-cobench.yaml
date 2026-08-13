@@ -1,0 +1,46 @@
+output_dir: "${COBENCH_OUTPUT_DIR}"
+candidate_entrypoint: "solution.py"
+
+pi:
+  model: "lenovo-deepseek-v4-flash/DeepSeek-V4-Flash-0731"
+  base_url: "https://modelfactory.lenovo.com/service-large-600-1777255649450/llm/v1"
+  api_key: "${LENOVO_DEEPSEEK_V4_FLASH_API_KEY}"
+  ca_cert_path: "../../.secrets/lenovo-modelfactory-ca.pem"
+  timeout_seconds: 900
+  enable_search: false
+  producer_prompt_path: "../../agents/pi_cobench/producer.md"
+  debugger_prompt_path: "../../agents/pi_cobench/debugger.md"
+  communicator_prompt_path: "../../agents/pi_cobench/communicator.md"
+
+evolution:
+  evaluation_budget: 64
+  branches: 3
+  generation_workers: 3
+  # Official evaluation is serialized; each candidate still uses one CPU.
+  evaluation_workers: 1
+  # Invalid/static-policy-breaking code still consumes a candidate slot but is
+  # not executed by the formal evaluator.
+  evaluate_locally_invalid: false
+  stagnation_window: 6
+  invalid_window: 6
+  invalid_rate_threshold: 0.34
+  exchange_interval: 3
+  diversity_weight: 0.35
+  late_phase_fraction: 0.8
+
+cobench:
+  run_final_test: true
+
+evaluator:
+  import_path: "evolution.adapters.cobench:COBenchEvaluationAdapter"
+  kwargs:
+    repo_path: "${COBENCH_REPO}"
+    data_dir: "${COBENCH_DATA_DIR}"
+    task: "${COBENCH_TASK}"
+    candidate_file: "solution.py"
+    timeout_seconds: 10
+    cpu_num: 1
+    feedback_length: 64
+    execution_backend: "docker"
+    docker_image: "self-harness-cobench:latest"
+    container_memory: "8g"

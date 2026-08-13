@@ -18,15 +18,24 @@ from .pi_agents import (
 from .scheduler import ProgressiveScheduler, SchedulerConfig
 
 
-def build_engine(config_path: Path) -> EvolutionEngine:
-    load_dotenv()
-    config = load_config(config_path)
+def build_engine_from_config(
+    config: dict,
+    *,
+    problem_path_override: Path | None = None,
+    adapter_override=None,
+    scheduler_override=None,
+) -> EvolutionEngine:
     evolution = config.get("evolution", {})
     pi = config["pi"]
     adapter_config = config["evaluator"]
     output_dir = resolve_path(config, config["output_dir"])
-    problem_path = resolve_path(config, config["problem_path"])
+    problem_path = problem_path_override or resolve_path(config, config["problem_path"])
     ca_path = pi.get("ca_cert_path")
+    prompt_paths = {
+        name: resolve_path(config, pi[name])
+        for name in ("producer_prompt_path", "debugger_prompt_path", "communicator_prompt_path")
+        if pi.get(name)
+    }
     settings = PiEvolutionSettings(
         model=str(pi["model"]),
         base_url=str(pi["base_url"]),
@@ -35,6 +44,7 @@ def build_engine(config_path: Path) -> EvolutionEngine:
         ca_cert_path=resolve_path(config, ca_path) if ca_path else None,
         timeout_seconds=float(pi.get("timeout_seconds", 900)),
         enable_search=bool(pi.get("enable_search", False)),
+        **prompt_paths,
     )
     budget = int(evolution.get("evaluation_budget", 64))
     branches = int(evolution.get("branches", 3))
@@ -48,12 +58,15 @@ def build_engine(config_path: Path) -> EvolutionEngine:
         diversity_weight=float(evolution.get("diversity_weight", 0.35)),
         late_phase_fraction=float(evolution.get("late_phase_fraction", 0.8)),
     )
-    adapter_type = import_symbol(str(adapter_config["import_path"]))
-    adapter = adapter_type(**dict(adapter_config.get("kwargs", {})))
+    if adapter_override is None:
+        adapter_type = import_symbol(str(adapter_config["import_path"]))
+        adapter = adapter_type(**dict(adapter_config.get("kwargs", {})))
+    else:
+        adapter = adapter_override
     archive = CandidateArchive(output_dir)
     return EvolutionEngine(
         archive=archive,
-        scheduler=ProgressiveScheduler(scheduler_config),
+        scheduler=scheduler_override or ProgressiveScheduler(scheduler_config),
         producer=PiCandidateProducer(output_dir, settings),
         evaluator=adapter,
         debugger=PiCandidateDebugger(output_dir, settings),
@@ -66,6 +79,11 @@ def build_engine(config_path: Path) -> EvolutionEngine:
             evaluate_locally_invalid=bool(evolution.get("evaluate_locally_invalid", True)),
         ),
     )
+
+
+def build_engine(config_path: Path) -> EvolutionEngine:
+    load_dotenv()
+    return build_engine_from_config(load_config(config_path))
 
 
 def main() -> None:

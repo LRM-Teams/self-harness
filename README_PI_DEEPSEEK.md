@@ -121,3 +121,8 @@ Pi search lanes, a persistent candidate graph, progressive
 exploration/exploitation, post-evaluation debugging, and retrospective
 cross-branch memory. See `docs/pi-candidate-evolution.md` and
 `configs/experiments/exp-pi-candidate-evolution-example.yaml`.
+
+The CO-Bench specialization adds a leak-resistant official evaluator adapter,
+64-candidate scheduling, CO-specific prompts, and isolated single-CPU Docker
+evaluation. See `docs/pi-cobench-evolution.md` and
+`configs/experiments/exp-pi-cobench.yaml`.

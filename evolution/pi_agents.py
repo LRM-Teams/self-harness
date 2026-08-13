@@ -24,6 +24,9 @@ class PiEvolutionSettings:
     ca_cert_path: Path | None = None
     timeout_seconds: float = 900
     enable_search: bool = False
+    producer_prompt_path: Path = PROJECT_DIR / "agents" / "pi_candidate_evolution" / "producer.md"
+    debugger_prompt_path: Path = PROJECT_DIR / "agents" / "pi_candidate_evolution" / "debugger.md"
+    communicator_prompt_path: Path = PROJECT_DIR / "agents" / "pi_candidate_evolution" / "communicator.md"
 
 
 class PiCandidateProducer:
@@ -58,7 +61,7 @@ class PiCandidateProducer:
             query=query,
             cwd=self.archive_root,
             output_dir=self.archive_root / "sessions" / "produce" / context.record.candidate_id,
-            system_prompt_path=PROJECT_DIR / "agents" / "pi_candidate_evolution" / "producer.md",
+            system_prompt_path=self.settings.producer_prompt_path,
             prompt_context={
                 "candidate_entrypoint": self.settings.candidate_entrypoint,
                 "operator": context.plan.operator,
@@ -115,7 +118,7 @@ class PiCandidateDebugger:
             query=query,
             cwd=self.archive_root,
             output_dir=self.archive_root / "sessions" / "debug" / record.candidate_id,
-            system_prompt_path=PROJECT_DIR / "agents" / "pi_candidate_evolution" / "debugger.md",
+            system_prompt_path=self.settings.debugger_prompt_path,
             prompt_context={},
             model=self.settings.model,
             base_url=self.settings.base_url,
@@ -169,7 +172,7 @@ class PiExperienceCommunicator:
             query=query,
             cwd=self.archive_root,
             output_dir=self.archive_root / "sessions" / "exchange" / f"generation-{generation:03d}",
-            system_prompt_path=PROJECT_DIR / "agents" / "pi_candidate_evolution" / "communicator.md",
+            system_prompt_path=self.settings.communicator_prompt_path,
             prompt_context={},
             model=self.settings.model,
             base_url=self.settings.base_url,
