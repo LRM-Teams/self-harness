@@ -10,7 +10,7 @@ This specialization runs the generic three-lane candidate graph against the offi
 - post-evaluation debugging and periodic mechanism-level communication;
 - one final test evaluation only after the development budget is exhausted.
 
-The adapter intentionally returns only `dev_score` and `dev_feedback` during search. Although the upstream `Feedback` object contains test fields, the worker drops them at the process boundary. Final test output is written only under `final/` after selection.
+The adapter constructs a development-only data view during search, evaluates only the instances selected by the task's public `get_dev()` split, and returns only `dev_score` and `dev_feedback`. Final test output is written only under `final/` after selection.
 
 ## Setup
 

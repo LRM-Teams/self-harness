@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import dataclass
 
 from evolution.adapters.cobench import COBenchEvaluationAdapter
 from evolution.archive import CandidateArchive
 from evolution.cobench import COBenchScheduler
 from evolution.models import EvaluationResult, ProductionResult, ValidationResult
 from evolution.scheduler import SchedulerConfig
+from evolution.adapters.cobench_worker import _development_only
 
 
 def _fake_cobench_repo(tmp_path: Path) -> tuple[Path, Path]:
@@ -128,3 +130,27 @@ def test_cobench_scheduler_keeps_early_immigrant_lane(tmp_path: Path) -> None:
     assert [item.lane for item in plans] == ["elite", "diverse", "adaptive"]
     assert plans[2].operator == "restart"
     assert plans[2].parent_ids == ()
+
+
+def test_development_view_loads_only_declared_cases_and_indices() -> None:
+    @dataclass
+    class Data:
+        test_cases: list[str]
+        load_data: object
+        get_dev: object
+
+    source = {
+        "dev.txt": ["dev-0", "dev-1"],
+        "test.txt": ["hidden"],
+    }
+    data = Data(
+        test_cases=["dev.txt", "test.txt"],
+        load_data=lambda path: source[Path(path).name],
+        get_dev=lambda: {"dev.txt": [1]},
+    )
+
+    view = _development_only(data)
+
+    assert view.test_cases == ["dev.txt"]
+    assert view.load_data("/data/dev.txt") == ["dev-1"]
+    assert view.get_dev() is None

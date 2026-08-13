@@ -4,7 +4,9 @@ import argparse
 import contextlib
 import json
 import math
+import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -24,6 +26,31 @@ def _error_type(feedback: str) -> str | None:
     if "no result" in lowered:
         return "no_result"
     return None
+
+
+def _development_only(data):
+    """Return a Data view that loads only public development instances."""
+    if not all(hasattr(data, name) for name in ("get_dev", "load_data", "test_cases")):
+        return data
+    dev = data.get_dev()
+    if dev is None:
+        return data
+    original_load = data.load_data
+    selected_cases = [case for case in data.test_cases if case in dev]
+
+    def load_development(file_path):
+        instances = original_load(file_path)
+        indices = dev.get(os.path.basename(file_path), [])
+        if not indices:
+            indices = [0]
+        return [instances[index] for index in indices if index < len(instances)]
+
+    return replace(
+        data,
+        test_cases=selected_cases,
+        load_data=load_development,
+        get_dev=lambda: None,
+    )
 
 
 def main() -> None:
@@ -46,6 +73,8 @@ def main() -> None:
         return
     if args.candidate is None:
         raise ValueError("--candidate is required for evaluation")
+    if args.mode == "dev":
+        data = _development_only(data)
     code = args.candidate.read_text(encoding="utf-8")
     with contextlib.redirect_stdout(sys.stderr):
         evaluator = Evaluator(
