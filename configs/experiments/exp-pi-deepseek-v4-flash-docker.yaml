@@ -7,6 +7,9 @@ max_iterations: 1
 
 harbor:
   env: "docker"
+  # Keep the pre-pulled Terminal-Bench images after each trial. Containers and
+  # volumes are still removed; only reusable task images remain cached.
+  delete: false
   environment_import_path: null
   environment_kwargs: null
   agent_kwargs:

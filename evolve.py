@@ -442,6 +442,7 @@ def _build_harbor_cmd(config: dict, workspace_dir: Path, agent_config_filename: 
             type=None,
             import_path=harbor_cfg["environment_import_path"],
             force_build=bool(harbor_cfg.get("force_build", False)),
+            delete=bool(harbor_cfg.get("delete", True)),
             kwargs=dict(harbor_cfg.get("environment_kwargs", {})),
         )
 
@@ -526,6 +527,8 @@ def _build_harbor_cmd(config: dict, workspace_dir: Path, agent_config_filename: 
 
     if harbor_cfg.get("force_build"):
         cmd.append("--force-build")
+    if not harbor_cfg.get("delete", True):
+        cmd.append("--no-delete")
 
     return cmd
 

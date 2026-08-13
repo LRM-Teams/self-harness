@@ -197,6 +197,27 @@ def test_harbor_command_uses_custom_pi_import_path(tmp_path: Path) -> None:
     assert job_config["orchestrator"]["n_concurrent_trials"] == 4
 
 
+def test_pi_docker_config_preserves_prepulled_task_images(tmp_path: Path) -> None:
+    project = Path(evolve.__file__).resolve().parent
+    config = evolve.load_config(
+        str(
+            project
+            / "configs"
+            / "experiments"
+            / "exp-pi-deepseek-v4-flash-docker.yaml"
+        )
+    )
+    command = evolve._build_harbor_cmd(
+        config,
+        project / "agents" / "pi_code_agent",
+        "pi_agent.yaml",
+        tmp_path,
+    )
+
+    assert command[command.index("--env") + 1] == "docker"
+    assert "--no-delete" in command
+
+
 def test_pi_e2b_environment_uses_separate_alias_namespace(tmp_path: Path) -> None:
     environment_dir = tmp_path / "environment"
     environment_dir.mkdir()
