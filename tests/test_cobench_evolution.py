@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from evolution.adapters.cobench import COBenchEvaluationAdapter
 from evolution.archive import CandidateArchive
@@ -71,6 +72,38 @@ def test_cobench_final_test_is_separate_from_search(tmp_path: Path) -> None:
     final = adapter.final_evaluate(candidate)
 
     assert final == {"test_score": 0.99, "test_feedback": "HIDDEN TEST FEEDBACK"}
+
+
+def test_cobench_final_test_uses_official_one_hour_watchdog(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo, data = _fake_cobench_repo(tmp_path)
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    (candidate / "solution.py").write_text(
+        "def solve(**kwargs):\n    return {}\n", encoding="utf-8"
+    )
+    adapter = COBenchEvaluationAdapter(
+        repo_path=str(repo),
+        data_dir=str(data),
+        task="Example task",
+        execution_backend="local",
+    )
+    observed: dict[str, float] = {}
+
+    def fake_run(*args, **kwargs):
+        observed["timeout"] = kwargs["timeout"]
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"test_score": 1.0, "test_feedback": "ok"}',
+            stderr="",
+        )
+
+    monkeypatch.setattr("evolution.adapters.cobench.subprocess.run", fake_run)
+
+    adapter.final_evaluate(candidate)
+
+    assert observed["timeout"] == 3660.0
 
 
 def test_cobench_validation_rejects_missing_or_async_solve(tmp_path: Path) -> None:
