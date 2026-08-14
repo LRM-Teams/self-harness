@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import re
 import subprocess
@@ -114,7 +115,41 @@ def _task_result(task: str, output_dir: Path, returncode: int, elapsed: float) -
     }
 
 
-def run_batch(base_config: Path, output_root: Path, tasks: list[str]) -> dict[str, Any]:
+def _run_task(
+    index: int,
+    total: int,
+    task: str,
+    config_path: Path,
+    task_output: Path,
+    output_root: Path,
+) -> tuple[str, dict[str, Any]]:
+    log_dir = output_root / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_key = f"{index + 1:02d}-{_slug(task)}"
+    print(f"[{index + 1}/{total}] start: {task}", flush=True)
+    started = time.monotonic()
+    with (log_dir / f"{log_key}.stdout.log").open("a", encoding="utf-8") as out, (
+        log_dir / f"{log_key}.stderr.log"
+    ).open("a", encoding="utf-8") as err:
+        completed = subprocess.run(
+            [sys.executable, "-m", "evolution.cobench", "--config", str(config_path)],
+            stdout=out,
+            stderr=err,
+            check=False,
+        )
+    return task, _task_result(
+        task, task_output, completed.returncode, time.monotonic() - started
+    )
+
+
+def run_batch(
+    base_config: Path,
+    output_root: Path,
+    tasks: list[str],
+    workers: int = 1,
+) -> dict[str, Any]:
+    if workers < 1:
+        raise ValueError("workers must be at least 1")
     payload = yaml.safe_load(base_config.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("base config must be a YAML mapping")
@@ -124,37 +159,49 @@ def run_batch(base_config: Path, output_root: Path, tasks: list[str]) -> dict[st
     if state_path.is_file():
         state = json.loads(state_path.read_text(encoding="utf-8"))
 
+    pending: list[tuple[int, str, Path, Path]] = []
     for index, task in enumerate(tasks):
         existing = state.get("tasks", {}).get(task, {})
         if existing.get("status") == "complete":
             print(f"[{index + 1}/{len(tasks)}] skip complete: {task}", flush=True)
             continue
         config_path, task_output = _task_config(payload, output_root, index, task)
-        log_dir = output_root / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_key = f"{index + 1:02d}-{_slug(task)}"
-        print(f"[{index + 1}/{len(tasks)}] start: {task}", flush=True)
-        started = time.monotonic()
-        with (log_dir / f"{log_key}.stdout.log").open("a", encoding="utf-8") as out, (
-            log_dir / f"{log_key}.stderr.log"
-        ).open("a", encoding="utf-8") as err:
-            completed = subprocess.run(
-                [sys.executable, "-m", "evolution.cobench", "--config", str(config_path)],
-                stdout=out,
-                stderr=err,
-                check=False,
+        pending.append((index, task, config_path, task_output))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(
+                _run_task,
+                index,
+                len(tasks),
+                task,
+                config_path,
+                task_output,
+                output_root,
+            ): (index, task)
+            for index, task, config_path, task_output in pending
+        }
+        for future in concurrent.futures.as_completed(futures):
+            index, expected_task = futures[future]
+            try:
+                task, result = future.result()
+            except Exception as exc:
+                task = expected_task
+                result = {
+                    "task": task,
+                    "status": "failed",
+                    "returncode": None,
+                    "error": f"batch worker error: {type(exc).__name__}: {exc}",
+                }
+            state.setdefault("tasks", {})[task] = result
+            _atomic_json(state_path, state)
+            print(
+                f"[{index + 1}/{len(tasks)}] {result['status']}: {task}; "
+                f"evals={result.get('evaluations')} "
+                f"dev={result.get('development_best')} "
+                f"test={(result.get('final_test') or {}).get('test_score')}",
+                flush=True,
             )
-        result = _task_result(
-            task, task_output, completed.returncode, time.monotonic() - started
-        )
-        state.setdefault("tasks", {})[task] = result
-        _atomic_json(state_path, state)
-        print(
-            f"[{index + 1}/{len(tasks)}] {result['status']}: {task}; "
-            f"evals={result['evaluations']} dev={result['development_best']} "
-            f"test={(result['final_test'] or {}).get('test_score')}",
-            flush=True,
-        )
     return state
 
 
@@ -163,9 +210,15 @@ def main() -> None:
     parser.add_argument("--base-config", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--task", action="append", choices=OFFICIAL_TASKS)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="number of CO-Bench tasks to run concurrently (default: 1)",
+    )
     args = parser.parse_args()
     tasks = list(args.task or OFFICIAL_TASKS)
-    result = run_batch(args.base_config, args.output_root, tasks)
+    result = run_batch(args.base_config, args.output_root, tasks, workers=args.workers)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
