@@ -116,12 +116,21 @@ class PiAgent(BaseAgent):
         self._max_tokens = int(self._config.get("max_tokens", 8192))
         if self._max_tokens <= 0:
             raise ValueError("max_tokens must be a positive integer")
+        self._length_recovery_attempts = int(
+            self._config.get("length_recovery_attempts", 2)
+        )
+        if self._length_recovery_attempts < 0:
+            raise ValueError("length_recovery_attempts must be non-negative")
         extensions_dir = self._config_dir / "extensions"
-        self._extensions = (
-            sorted(path for path in extensions_dir.glob("*.ts") if path.is_file())
+        extensions = (
+            list(path for path in extensions_dir.glob("*.ts") if path.is_file())
             if extensions_dir.is_dir()
             else []
         )
+        shared_recovery = Path(__file__).parent / "pi_extensions" / "length_recovery.ts"
+        if shared_recovery.is_file():
+            extensions.append(shared_recovery)
+        self._extensions = sorted(extensions, key=lambda path: path.name)
         configured_tools = self._config.get("tools", [])
         self._tools = [str(tool) for tool in configured_tools] if configured_tools else []
 
@@ -264,6 +273,7 @@ class PiAgent(BaseAgent):
             "PI_CODING_AGENT_DIR": f"{_REMOTE_ROOT}/config",
             "PI_DEEPSEEK_API_KEY": api_key,
             "SERPER_API_KEY": os.environ.get("SERPER_API_KEY", ""),
+            "PI_LENGTH_RECOVERY_MAX": str(self._length_recovery_attempts),
         }
         if self._ca_cert_path:
             env["NODE_EXTRA_CA_CERTS"] = f"{_REMOTE_ROOT}/ca.pem"

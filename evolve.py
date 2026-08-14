@@ -1595,6 +1595,9 @@ def run_parallel_pi_debug_agents(
                     tools=["read"],
                     timeout_seconds=timeout_seconds,
                     max_tokens=int(config.get("pi", {}).get("max_tokens", 8192)),
+                    length_recovery_attempts=int(
+                        config.get("pi", {}).get("length_recovery_attempts", 2)
+                    ),
                 )
                 response = result.text or "[pi-debug error] empty response"
             except Exception as exc:
@@ -3672,6 +3675,7 @@ def _run_pi_evolve_agent(
         write_roots=[workspace_dir],
         write_files=[exp_dir / "change_manifest.json"],
         max_tokens=int(pi_cfg.get("max_tokens", 8192)),
+        length_recovery_attempts=int(pi_cfg.get("length_recovery_attempts", 2)),
     )
     print(f"[evolve] Pi evolution agent completed", flush=True)
     return result.text
@@ -4841,6 +4845,9 @@ def _run_pi_explore_agent(
         tools=["read", "serper_search"],
         timeout_seconds=timeout_seconds,
         max_tokens=int(config.get("pi", {}).get("max_tokens", 8192)),
+        length_recovery_attempts=int(
+            config.get("pi", {}).get("length_recovery_attempts", 2)
+        ),
     )
     report = result.text or "[pi-explore error] empty response"
     report_path.parent.mkdir(parents=True, exist_ok=True)

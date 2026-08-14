@@ -79,6 +79,7 @@ def run_pi_agent(
     tools: list[str] | None = None,
     timeout_seconds: float | None = None,
     max_tokens: int = 8192,
+    length_recovery_attempts: int = 2,
 ) -> PiRunResult:
     if "/" not in model:
         raise ValueError("Pi model must use provider/model format")
@@ -88,6 +89,8 @@ def run_pi_agent(
         raise RuntimeError("Pi CLI not found; set PI_BIN or install pi")
     if max_tokens <= 0:
         raise ValueError("max_tokens must be a positive integer")
+    if length_recovery_attempts < 0:
+        raise ValueError("length_recovery_attempts must be non-negative")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     config_dir = output_dir / "pi-config"
@@ -149,6 +152,7 @@ def run_pi_agent(
             "AHE_TOOL_READ_ROOTS": os.pathsep.join(str(p.resolve()) for p in (read_roots or [cwd])),
             "AHE_TOOL_WRITE_ROOTS": os.pathsep.join(str(p.resolve()) for p in (write_roots or [])),
             "AHE_TOOL_WRITE_FILES": os.pathsep.join(str(p.resolve()) for p in (write_files or [])),
+            "PI_LENGTH_RECOVERY_MAX": str(length_recovery_attempts),
         }
     )
     if ca_cert_path:
@@ -169,6 +173,7 @@ def run_pi_agent(
         "--no-prompt-templates",
         "--tools", ",".join(enabled_tools),
         "--extension", str(PROJECT_DIR / "agents" / "pi_extensions" / "visibility_guard.ts"),
+        "--extension", str(PROJECT_DIR / "agents" / "pi_extensions" / "length_recovery.ts"),
     ]
     if "serper_search" in enabled_tools:
         command.extend(

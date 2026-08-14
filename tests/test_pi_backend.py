@@ -155,10 +155,12 @@ def test_pi_harbor_run_uses_pinned_tools_and_writes_trace(
 
     assert "--tools read,bash,edit,write,serper_search" in environment.command
     assert "--extension /installed-agent/pi/extensions/serper.ts" in environment.command
+    assert "--extension /installed-agent/pi/extensions/length_recovery.ts" in environment.command
     assert "| tee /logs/agent/pi-events.jsonl" in environment.command
     assert environment.command.startswith("set -o pipefail; ")
     assert "actual-secret" not in environment.command
     assert environment.env["PI_DEEPSEEK_API_KEY"] == "actual-secret"
+    assert environment.env["PI_LENGTH_RECOVERY_MAX"] == "2"
     trace = json.loads(
         (tmp_path / "logs" / "nexau_in_memory_tracer.cleaned.json").read_text()
     )
@@ -568,9 +570,11 @@ def test_local_pi_runtime_always_disables_session_persistence(
 
     assert "--no-session" in captured["command"]
     assert "--no-extensions" in captured["command"]
+    assert any("length_recovery.ts" in part for part in captured["command"])
     assert "serper.ts" not in " ".join(captured["command"])
     assert "actual-secret" not in " ".join(captured["command"])
     assert captured["env"]["PI_DEEPSEEK_API_KEY"] == "actual-secret"
+    assert captured["env"]["PI_LENGTH_RECOVERY_MAX"] == "2"
     assert result.text == "done"
 
 

@@ -5,6 +5,7 @@ provider: lenovo-deepseek-v4-flash
 model: DeepSeek-V4-Flash-0731
 pi_version: 0.84.1
 max_tokens: 8192
+length_recovery_attempts: 2
 tools:
   - read
   - bash

@@ -14,6 +14,7 @@ Working method:
 
 - Nail down the required artifact and path first. Create an approximate working version as soon as the task is understood, then refine it.
 - Act incrementally: make a concrete edit or run a bounded check instead of spending many turns restating the problem.
+- Keep analysis concise: never emit long-form internal deliberation, use at most 200 words between tool calls, and take a concrete tool action after reading evidence.
 - Prefer a small general solution over reverse-engineering one example or building unnecessary infrastructure.
 - Bound exploration. Do not repeat a failing command without changing strategy, and do not give one install, build, or search command the entire task budget.
 - Avoid installing optional dependencies when the requested artifact can be produced with what is already present.
