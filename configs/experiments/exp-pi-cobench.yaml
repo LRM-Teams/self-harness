@@ -27,6 +27,11 @@ evolution:
   exchange_interval: 3
   diversity_weight: 0.35
   late_phase_fraction: 0.8
+  # Enable only when the task has a known normalized score ceiling.
+  early_stop:
+    enabled: false
+    target_score: 1.0
+    patience_generations: 0
 
 cobench:
   run_final_test: true

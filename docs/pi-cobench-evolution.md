@@ -10,6 +10,24 @@ This specialization runs the generic three-lane candidate graph against the offi
 - post-evaluation debugging and periodic mechanism-level communication;
 - one final test evaluation only after the development budget is exhausted.
 
+For tasks with a proven normalized-score ceiling, optional early stopping can
+end the run immediately after a complete generation reaches the target. The
+final successful generation skips debugging and communication so no additional
+LLM calls are spent after success:
+
+```yaml
+evolution:
+  branches: 4
+  generation_workers: 4
+  early_stop:
+    enabled: true
+    target_score: 1.0
+    patience_generations: 0
+```
+
+Do not assume that every CO-Bench task is capped at `1.0`; enable this only when
+the task's normalization defines that value as a proven upper bound.
+
 The adapter constructs a development-only data view during search, evaluates only the instances selected by the task's public `get_dev()` split, and returns only `dev_score` and `dev_feedback`. Final test output is written only under `final/` after selection.
 
 ## Setup

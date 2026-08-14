@@ -68,6 +68,25 @@ class COBenchScheduler(ProgressiveScheduler):
                     rationale="Preserve one independent immigrant while the current population is infeasible.",
                 )
             )
+        ranked = sorted(
+            scored,
+            key=lambda item: (float(item.score), item.evaluation_index or 0),
+            reverse=True,
+        )
+        while len(plans) < count:
+            index = len(plans) - 2
+            parent = ranked[(index - 1) % len(ranked)]
+            plans.append(
+                LanePlan(
+                    lane=f"partial-challenger-{index}",
+                    operator="repair",
+                    parent_ids=(parent.candidate_id,),
+                    reference_ids=(elite.candidate_id,)
+                    if parent.candidate_id != elite.candidate_id
+                    else (),
+                    rationale="Use the additional parallel lane to repair another partial solution.",
+                )
+            )
         return plans
 
     def _adaptive_plan(

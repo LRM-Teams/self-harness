@@ -127,6 +127,69 @@ def test_scheduler_keeps_elite_diverse_and_adaptive_lanes(tmp_path: Path) -> Non
     assert plans[2].operator in {"crossover", "refine", "restart", "repair"}
 
 
+def test_scheduler_adds_a_fourth_challenger_lane(tmp_path: Path) -> None:
+    archive = CandidateArchive(tmp_path / "run")
+    scheduler = ProgressiveScheduler(
+        SchedulerConfig(branches=4, evaluation_budget=64, invalid_rate_threshold=1.0)
+    )
+    seed = archive.reserve(0, scheduler.plan_generation(archive, 1)[0])
+    (archive.artifact_dir(seed.candidate_id) / "solution.py").write_text(
+        "exact solver", encoding="utf-8"
+    )
+    archive.record_production(seed.candidate_id, ProductionResult())
+    archive.record_evaluation(
+        seed.candidate_id,
+        ValidationResult(True),
+        EvaluationResult(score=1.0, feasible=True),
+        1,
+    )
+
+    plans = scheduler.plan_generation(archive, 4)
+
+    assert len(plans) == 4
+    assert [item.lane for item in plans] == [
+        "elite",
+        "diverse",
+        "adaptive",
+        "challenger-1",
+    ]
+    assert plans[3].operator == "restart"
+
+
+def test_engine_stops_after_generation_reaches_target_score(tmp_path: Path) -> None:
+    problem = tmp_path / "problem.md"
+    problem.write_text("maximize VALUE", encoding="utf-8")
+    archive = CandidateArchive(tmp_path / "run")
+    evaluator = FakeEvaluator()
+    communicator = FakeCommunicator()
+    scheduler = ProgressiveScheduler(
+        SchedulerConfig(branches=4, evaluation_budget=64, invalid_rate_threshold=1.0)
+    )
+    engine = EvolutionEngine(
+        archive=archive,
+        scheduler=scheduler,
+        producer=FakeProducer(),
+        evaluator=evaluator,
+        debugger=FakeDebugger(),
+        communicator=communicator,
+        problem_path=problem,
+        config=EngineConfig(
+            evaluation_budget=64,
+            generation_workers=4,
+            evaluation_workers=1,
+            early_stop_target_score=1.0,
+        ),
+    )
+
+    best = engine.run()
+
+    assert evaluator.calls == 4
+    assert len(archive.evaluated) == 4
+    assert best is not None and best.score == 4.0
+    assert all(not item.debug_report for item in archive.evaluated)
+    assert communicator.generations == []
+
+
 def test_archive_persists_candidate_graph(tmp_path: Path) -> None:
     root = tmp_path / "run"
     archive = CandidateArchive(root)

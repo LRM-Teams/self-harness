@@ -19,7 +19,7 @@ class SchedulerConfig:
 
 
 class ProgressiveScheduler:
-    """Three-lane progressive search: elite, diverse, and adaptive exploration."""
+    """Progressive elite, diverse, adaptive, and optional challenger search."""
 
     def __init__(self, config: SchedulerConfig):
         if config.branches < 1:
@@ -66,6 +66,16 @@ class ProgressiveScheduler:
             )
         if count >= 3:
             plans.append(self._adaptive_plan(archive, elite.candidate_id, diverse.candidate_id if diverse else None))
+        while len(plans) < count:
+            challenger_index = len(plans) - 2
+            plans.append(
+                self._challenger_plan(
+                    archive,
+                    elite.candidate_id,
+                    diverse.candidate_id if diverse else None,
+                    challenger_index,
+                )
+            )
         return plans
 
     def should_exchange(self, archive: CandidateArchive) -> bool:
@@ -115,6 +125,29 @@ class ProgressiveScheduler:
             parent_ids=(elite_id,),
             reference_ids=(diverse_id,) if diverse_id else (),
             rationale="Late phase: spend remaining budget on focused improvement of the elite.",
+        )
+
+    def _challenger_plan(
+        self,
+        archive: CandidateArchive,
+        elite_id: str,
+        diverse_id: str | None,
+        index: int,
+    ) -> LanePlan:
+        progress = archive.evaluation_count / self.config.evaluation_budget
+        if progress < self.config.late_phase_fraction or diverse_id is None:
+            return LanePlan(
+                lane=f"challenger-{index}",
+                operator="restart",
+                reference_ids=tuple(item for item in (elite_id, diverse_id) if item),
+                rationale="Use the additional parallel lane for an independent algorithm family.",
+            )
+        return LanePlan(
+            lane=f"challenger-{index}",
+            operator="refine-diverse",
+            parent_ids=(diverse_id,),
+            reference_ids=(elite_id,),
+            rationale="Late phase: refine a structurally diverse challenger against the elite.",
         )
 
     def _stagnated(self, archive: CandidateArchive) -> bool:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import math
 import time
 from dataclasses import dataclass
 
@@ -22,6 +23,8 @@ class EngineConfig:
     generation_workers: int = 3
     evaluation_workers: int = 1
     evaluate_locally_invalid: bool = True
+    early_stop_target_score: float | None = None
+    early_stop_patience_generations: int = 0
 
 
 class EvolutionEngine:
@@ -50,18 +53,41 @@ class EvolutionEngine:
 
     def run(self) -> CandidateRecord | None:
         while self.archive.evaluation_count < self.config.evaluation_budget:
+            if self._early_stop_reached():
+                break
             remaining = self.config.evaluation_budget - self.archive.evaluation_count
             generation = self.archive.next_generation
             plans = self.scheduler.plan_generation(self.archive, remaining)
             records = [self.archive.reserve(generation, plan) for plan in plans]
             self._produce(records, plans)
             self._evaluate(records)
+            if self._early_stop_reached():
+                break
             self._debug(records)
             if self.scheduler.should_exchange(self.archive):
                 completed = [self.archive.get(item.candidate_id) for item in records]
                 memory = self.communicator.exchange(completed, self.archive.memory_path)
                 self.archive.append_memory(f"## Generation {generation}\n\n{memory}")
         return self.archive.best()
+
+    def _early_stop_reached(self) -> bool:
+        target = self.config.early_stop_target_score
+        if target is None:
+            return False
+        qualifying = [
+            item
+            for item in self.archive.evaluated
+            if item.feasible
+            and item.score is not None
+            and math.isfinite(float(item.score))
+            and float(item.score) >= target
+        ]
+        if not qualifying:
+            return False
+        patience = max(0, self.config.early_stop_patience_generations)
+        first_generation = min(item.generation for item in qualifying)
+        latest_generation = max(item.generation for item in self.archive.evaluated)
+        return latest_generation >= first_generation + patience
 
     def _produce(self, records: list[CandidateRecord], plans: list[LanePlan]) -> None:
         def run_one(record: CandidateRecord, plan: LanePlan) -> ProductionResult:

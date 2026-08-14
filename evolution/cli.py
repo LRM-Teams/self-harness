@@ -49,6 +49,11 @@ def build_engine_from_config(
     )
     budget = int(evolution.get("evaluation_budget", 64))
     branches = int(evolution.get("branches", 3))
+    early_stop = evolution.get("early_stop", {})
+    early_stop_enabled = bool(early_stop.get("enabled", False))
+    early_stop_target = early_stop.get("target_score")
+    if early_stop_enabled and early_stop_target is None:
+        raise ValueError("evolution.early_stop.target_score is required when enabled")
     scheduler_config = SchedulerConfig(
         branches=branches,
         evaluation_budget=budget,
@@ -78,6 +83,12 @@ def build_engine_from_config(
             generation_workers=int(evolution.get("generation_workers", branches)),
             evaluation_workers=int(evolution.get("evaluation_workers", 1)),
             evaluate_locally_invalid=bool(evolution.get("evaluate_locally_invalid", True)),
+            early_stop_target_score=(
+                float(early_stop_target) if early_stop_enabled else None
+            ),
+            early_stop_patience_generations=int(
+                early_stop.get("patience_generations", 0)
+            ),
         ),
     )
 
