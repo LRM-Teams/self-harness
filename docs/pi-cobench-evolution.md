@@ -59,3 +59,19 @@ The Docker evaluator runs with networking disabled, one CPU, a read-only root fi
 Before execution, the adapter also rejects missing/async `solve` functions and common filesystem, process, dynamic-code, and network access primitives. Rejected candidates still consume one of the 64 search slots but are not executed.
 
 Every task must use a separate `output_dir`. A persisted run manifest rejects accidental resume with a different task or evaluator configuration. The archive is resumable and never overwrites evaluated candidates; an existing final-test result is reused instead of querying the test set again.
+
+## Resumable all-task batch
+
+Run the official 36-task list sequentially while retaining the configured
+within-generation Agent concurrency:
+
+```bash
+uv run pi-cobench-batch \
+  --base-config /path/to/cobench-batch-base.yaml \
+  --output-root /path/to/cobench-all36-run1
+```
+
+The batch runner writes one generated config, task archive, stdout/stderr log,
+and final result per task. After every task it atomically updates
+`summary.json`. Re-running the same command skips completed tasks and lets the
+per-task evolution archive resume any incomplete task.
