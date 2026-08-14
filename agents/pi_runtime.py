@@ -131,6 +131,8 @@ def run_pi_agent(
         system_prompt_path.read_text(encoding="utf-8")
     )
     system_prompt = template.render(**prompt_context)
+    rendered_system_prompt_path = output_dir / "rendered-system-prompt.md"
+    rendered_system_prompt_path.write_text(system_prompt, encoding="utf-8")
     events_path = output_dir / "pi-events.jsonl"
     stderr_path = output_dir / "pi-stderr.txt"
     trace_path = output_dir / "nexau_in_memory_tracer.cleaned.json"
@@ -175,8 +177,9 @@ def run_pi_agent(
         [
             "--provider", provider,
             "--model", model_id,
-            "--system-prompt", system_prompt,
-            query,
+            # Pi accepts a file path here and resolves its contents itself.
+            # Keeping both large prompts out of argv avoids Linux ARG_MAX.
+            "--system-prompt", str(rendered_system_prompt_path),
         ]
     )
 
@@ -188,11 +191,15 @@ def run_pi_agent(
             command,
             cwd=cwd,
             env=env,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=err,
             text=True,
             bufsize=1,
         )
+        assert process.stdin is not None
+        process.stdin.write(query)
+        process.stdin.close()
         timed_out = threading.Event()
 
         def _terminate_on_timeout() -> None:

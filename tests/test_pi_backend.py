@@ -12,6 +12,18 @@ from harbor.models.task.config import EnvironmentConfig as TaskEnvironmentConfig
 from harbor.models.trial.paths import TrialPaths
 
 
+class CapturingStdin:
+    def __init__(self) -> None:
+        self.text = ""
+        self.closed = False
+
+    def write(self, value: str) -> None:
+        self.text += value
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def test_pi_events_convert_to_ahe_clean_trace() -> None:
     events = [
         {
@@ -446,6 +458,8 @@ def test_local_pi_runtime_always_disables_session_persistence(
         def __init__(self, command, **kwargs):
             captured["command"] = command
             captured["env"] = kwargs["env"]
+            self.stdin = CapturingStdin()
+            captured["stdin"] = self.stdin
             self.stdout = iter([
                 json.dumps({
                     "type": "message_end",
@@ -480,6 +494,13 @@ def test_local_pi_runtime_always_disables_session_persistence(
     assert "--no-extensions" in captured["command"]
     assert "serper.ts" not in " ".join(captured["command"])
     assert "actual-secret" not in " ".join(captured["command"])
+    assert "work" not in captured["command"]
+    assert "role prompt" not in captured["command"]
+    assert captured["stdin"].text == "work"
+    assert captured["stdin"].closed is True
+    rendered_prompt = tmp_path / "session" / "rendered-system-prompt.md"
+    assert rendered_prompt.read_text(encoding="utf-8") == "role prompt"
+    assert str(rendered_prompt) in captured["command"]
     assert captured["env"]["PI_DEEPSEEK_API_KEY"] == "actual-secret"
     assert result.text == "done"
 
@@ -491,6 +512,7 @@ def test_local_pi_runtime_uses_configured_output_budget(
 
     class FakeProcess:
         def __init__(self, command, **kwargs):
+            self.stdin = CapturingStdin()
             self.stdout = iter([
                 json.dumps({
                     "type": "message_end",
