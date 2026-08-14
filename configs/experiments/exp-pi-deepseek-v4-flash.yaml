@@ -17,6 +17,7 @@ llm:
 
 pi:
   ca_cert_path: ".secrets/lenovo-modelfactory-ca.pem"
+  max_tokens: 8192
 
 harbor:
   agent: "pi"

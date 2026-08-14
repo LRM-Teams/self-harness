@@ -18,6 +18,10 @@ _REMOTE_ROOT = Path("/installed-agent/pi")
 _EVENTS_FILE = Path("/logs/agent/pi-events.jsonl")
 
 
+class PiOutputLimitError(RuntimeError):
+    """Pi stopped because the configured model output limit was exhausted."""
+
+
 def _message_text(message: dict[str, Any]) -> str:
     content = message.get("content", "")
     if isinstance(content, str):
@@ -109,6 +113,9 @@ class PiAgent(BaseAgent):
                 "local_node_path and local_pi_package_dir must be provided together"
             )
         self._version = str(self._config.get("pi_version") or version)
+        self._max_tokens = int(self._config.get("max_tokens", 8192))
+        if self._max_tokens <= 0:
+            raise ValueError("max_tokens must be a positive integer")
         extensions_dir = self._config_dir / "extensions"
         self._extensions = (
             sorted(path for path in extensions_dir.glob("*.ts") if path.is_file())
@@ -157,7 +164,7 @@ class PiAgent(BaseAgent):
                                     "reasoning": False,
                                     "input": ["text"],
                                     "contextWindow": 524288,
-                                    "maxTokens": 4096,
+                                    "maxTokens": self._max_tokens,
                                     "cost": {
                                         "input": 0,
                                         "output": 0,
@@ -313,6 +320,7 @@ class PiAgent(BaseAgent):
             encoding="utf-8",
         )
 
+        final_stop_reason = ""
         for event in reversed(events):
             if event.get("type") != "agent_end":
                 continue
@@ -321,6 +329,7 @@ class PiAgent(BaseAgent):
                 break
             for message in reversed(event_messages):
                 if isinstance(message, dict) and message.get("role") == "assistant":
+                    final_stop_reason = str(message.get("stopReason") or "")
                     usage = message.get("usage") or {}
                     context.n_input_tokens = int(usage.get("input", 0) or 0)
                     context.n_output_tokens = int(usage.get("output", 0) or 0)
@@ -330,3 +339,7 @@ class PiAgent(BaseAgent):
 
         if result.return_code != 0:
             raise RuntimeError(f"Pi exited with code {result.return_code}")
+        if final_stop_reason == "length":
+            raise PiOutputLimitError(
+                f"Pi exhausted the configured {self._max_tokens}-token output limit"
+            )

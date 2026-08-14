@@ -25,6 +25,10 @@ class PiRunResult:
     trace_path: Path
 
 
+class PiOutputLimitError(RuntimeError):
+    """Pi stopped because the configured model output limit was exhausted."""
+
+
 def _content_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -74,6 +78,7 @@ def run_pi_agent(
     write_files: list[Path] | None = None,
     tools: list[str] | None = None,
     timeout_seconds: float | None = None,
+    max_tokens: int = 8192,
 ) -> PiRunResult:
     if "/" not in model:
         raise ValueError("Pi model must use provider/model format")
@@ -81,6 +86,8 @@ def run_pi_agent(
     pi_bin = os.environ.get("PI_BIN") or shutil.which("pi")
     if not pi_bin:
         raise RuntimeError("Pi CLI not found; set PI_BIN or install pi")
+    if max_tokens <= 0:
+        raise ValueError("max_tokens must be a positive integer")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     config_dir = output_dir / "pi-config"
@@ -100,7 +107,13 @@ def run_pi_agent(
                             "supportsStore": False,
                             "maxTokensField": "max_tokens",
                         },
-                        "models": [{"id": model_id, "contextWindow": 524288, "maxTokens": 4096}],
+                        "models": [
+                            {
+                                "id": model_id,
+                                "contextWindow": 524288,
+                                "maxTokens": max_tokens,
+                            }
+                        ],
                     }
                 }
             },
@@ -231,4 +244,19 @@ def run_pi_agent(
     )
     if returncode != 0:
         raise RuntimeError(f"Pi exited with code {returncode}; see {stderr_path}")
+    for event in reversed(events):
+        if event.get("type") != "agent_end":
+            continue
+        event_messages = event.get("messages")
+        if isinstance(event_messages, list) and any(
+            isinstance(message, dict)
+            and message.get("role") == "assistant"
+            and message.get("stopReason") == "length"
+            for message in event_messages
+        ):
+            raise PiOutputLimitError(
+                f"Pi exhausted the configured {max_tokens}-token output limit; "
+                f"see {events_path}"
+            )
+        break
     return PiRunResult(final_text, returncode, events_path, trace_path)

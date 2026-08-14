@@ -10,8 +10,12 @@ harbor:
   # Keep the pre-pulled Terminal-Bench images after each trial. Containers and
   # volumes are still removed; only reusable task images remain cached.
   delete: false
-  environment_import_path: null
-  environment_kwargs: null
+  environment_import_path: "agents.pi_docker_environment:PiDockerEnvironment"
+  environment_kwargs:
+    inherit_host_proxy: true
+    docker_bridge_host: "172.17.0.1"
+    no_proxy_append:
+      - "modelfactory.lenovo.com"
   agent_kwargs:
     local_node_path: "/usr/bin/node"
     local_pi_package_dir: "/home/jianghp3/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent"

@@ -3,9 +3,13 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import evolve
-from agents.pi_harbor_agent import PiAgent, _clean_messages
+from agents.pi_docker_environment import PiDockerEnvironment
+from agents.pi_harbor_agent import PiAgent, PiOutputLimitError, _clean_messages
 from agents.pi_e2b_environment import PiE2BEnvironment
+from harbor.environments.docker.docker import DockerEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.task.config import EnvironmentConfig as TaskEnvironmentConfig
 from harbor.models.trial.paths import TrialPaths
@@ -45,7 +49,7 @@ def test_pi_runtime_model_config_never_contains_secret(tmp_path: Path) -> None:
     config_dir = tmp_path / "agent"
     config_dir.mkdir()
     (config_dir / "pi_agent.yaml").write_text(
-        "provider: example-provider\nmodel: example-model\npi_version: 0.84.1\n",
+        "provider: example-provider\nmodel: example-model\npi_version: 0.84.1\nmax_tokens: 12345\n",
         encoding="utf-8",
     )
     agent = PiAgent(
@@ -60,6 +64,46 @@ def test_pi_runtime_model_config_never_contains_secret(tmp_path: Path) -> None:
 
     assert "$PI_DEEPSEEK_API_KEY" in model_config
     assert "actual-secret" not in model_config
+    assert json.loads(model_config)["providers"]["example-provider"]["models"][0][
+        "maxTokens"
+    ] == 12345
+
+
+def test_pi_harbor_treats_output_length_as_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = Path(evolve.__file__).resolve().parent
+    agent = PiAgent(
+        logs_dir=tmp_path / "logs",
+        model_name="lenovo-deepseek-v4-flash/DeepSeek-V4-Flash-0731",
+        config_path=project / "agents" / "pi_code_agent" / "pi_agent.yaml",
+        base_url="https://example.invalid/v1",
+    )
+    monkeypatch.setenv("LLM_API_KEY", "actual-secret")
+
+    class Result:
+        return_code = 0
+        stderr = ""
+        stdout = json.dumps(
+            {
+                "type": "agent_end",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "unfinished"}],
+                        "usage": {"input": 10, "output": 8192},
+                        "stopReason": "length",
+                    }
+                ],
+            }
+        )
+
+    class Environment:
+        async def exec(self, *, command, env):
+            return Result()
+
+    with pytest.raises(PiOutputLimitError, match="8192-token"):
+        asyncio.run(agent.run("do the task", Environment(), AgentContext()))
 
 
 def test_pi_harbor_run_uses_pinned_tools_and_writes_trace(
@@ -214,8 +258,65 @@ def test_pi_docker_config_preserves_prepulled_task_images(tmp_path: Path) -> Non
         tmp_path,
     )
 
-    assert command[command.index("--env") + 1] == "docker"
-    assert "--no-delete" in command
+    assert command[:3] == ["harbor", "run", "--config"]
+    job_config = json.loads(Path(command[3]).read_text(encoding="utf-8"))
+    assert job_config["environment"]["import_path"] == (
+        "agents.pi_docker_environment:PiDockerEnvironment"
+    )
+    assert job_config["environment"]["delete"] is False
+    assert job_config["environment"]["kwargs"]["inherit_host_proxy"] is True
+
+
+def test_pi_docker_environment_forwards_loopback_proxy_via_bridge(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7893")
+    monkeypatch.setenv("HTTPS_PROXY", "http://localhost:7893")
+    monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
+    environment_dir = tmp_path / "environment"
+    environment_dir.mkdir()
+    (environment_dir / "Dockerfile").write_text("FROM ubuntu:24.04\n", encoding="utf-8")
+    environment = PiDockerEnvironment(
+        environment_dir=environment_dir,
+        environment_name="proxy-test",
+        session_id="test-session",
+        trial_paths=TrialPaths(tmp_path / "trial"),
+        task_env_config=TaskEnvironmentConfig(allow_internet=True),
+        no_proxy_append=["modelfactory.lenovo.com"],
+    )
+
+    assert environment._pi_proxy_env["HTTP_PROXY"] == "http://172.17.0.1:7893"
+    assert environment._pi_proxy_env["https_proxy"] == "http://172.17.0.1:7893"
+    assert "modelfactory.lenovo.com" in environment._pi_proxy_env["NO_PROXY"]
+
+    captured = {}
+
+    async def fake_exec(self, command, cwd=None, env=None, timeout_sec=None):
+        captured["env"] = env
+        return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr(DockerEnvironment, "exec", fake_exec)
+    asyncio.run(environment.exec("true", env={"TASK_VALUE": "kept"}))
+    assert captured["env"]["TASK_VALUE"] == "kept"
+    assert captured["env"]["http_proxy"] == "http://172.17.0.1:7893"
+
+
+def test_pi_docker_environment_does_not_bypass_disabled_internet(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7893")
+    environment_dir = tmp_path / "environment"
+    environment_dir.mkdir()
+    (environment_dir / "Dockerfile").write_text("FROM ubuntu:24.04\n", encoding="utf-8")
+    environment = PiDockerEnvironment(
+        environment_dir=environment_dir,
+        environment_name="offline-test",
+        session_id="test-session",
+        trial_paths=TrialPaths(tmp_path / "trial"),
+        task_env_config=TaskEnvironmentConfig(allow_internet=False),
+    )
+
+    assert environment._pi_proxy_env == {}
 
 
 def test_pi_e2b_environment_uses_separate_alias_namespace(tmp_path: Path) -> None:
@@ -471,3 +572,54 @@ def test_local_pi_runtime_always_disables_session_persistence(
     assert "actual-secret" not in " ".join(captured["command"])
     assert captured["env"]["PI_DEEPSEEK_API_KEY"] == "actual-secret"
     assert result.text == "done"
+
+
+def test_local_pi_runtime_treats_output_length_as_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from agents import pi_runtime
+
+    class FakeProcess:
+        def __init__(self, command, **kwargs):
+            self.stdout = iter(
+                [
+                    json.dumps(
+                        {
+                            "type": "agent_end",
+                            "messages": [
+                                {
+                                    "role": "assistant",
+                                    "content": [{"type": "text", "text": "unfinished"}],
+                                    "stopReason": "length",
+                                }
+                            ],
+                        }
+                    )
+                    + "\n"
+                ]
+            )
+
+        def wait(self):
+            return 0
+
+        def kill(self):
+            raise AssertionError("unexpected timeout")
+
+    monkeypatch.setattr(pi_runtime.shutil, "which", lambda _: "/fake/pi")
+    monkeypatch.setattr(pi_runtime.subprocess, "Popen", FakeProcess)
+    prompt = tmp_path / "system.md"
+    prompt.write_text("role prompt", encoding="utf-8")
+
+    with pytest.raises(pi_runtime.PiOutputLimitError, match="8192-token"):
+        pi_runtime.run_pi_agent(
+            query="work",
+            cwd=tmp_path,
+            output_dir=tmp_path / "session",
+            system_prompt_path=prompt,
+            prompt_context={},
+            model="provider/model",
+            base_url="https://example.invalid/v1",
+            api_key="actual-secret",
+            read_roots=[tmp_path],
+            tools=["read"],
+        )
