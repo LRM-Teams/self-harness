@@ -1,0 +1,48 @@
+# Run with `pi-cobench-batch --workers 4`. The batch runner replaces
+# output_dir and evaluator.kwargs.task for each official task.
+output_dir: "replaced-by-batch-runner"
+candidate_entrypoint: "solution.py"
+
+pi:
+  model: "lenovo-deepseek-v4-flash/DeepSeek-V4-Flash-0731"
+  base_url: "https://modelfactory.lenovo.com/service-large-600-1777255649450/llm/v1"
+  api_key: "${LENOVO_DEEPSEEK_V4_FLASH_API_KEY}"
+  ca_cert_path: "/home/jianghp3/.pi/agent/certs/lenovo-modelfactory-ca.pem"
+  timeout_seconds: 900
+  max_tokens: 8192
+  enable_search: false
+  producer_prompt_path: "../../agents/pi_cobench/producer.md"
+  debugger_prompt_path: "../../agents/pi_cobench/debugger.md"
+  communicator_prompt_path: "../../agents/pi_cobench/communicator.md"
+
+evolution:
+  evaluation_budget: 64
+  branches: 4
+  generation_workers: 4
+  evaluation_workers: 1
+  evaluate_locally_invalid: false
+  stagnation_window: 8
+  invalid_window: 8
+  invalid_rate_threshold: 0.5
+  exchange_interval: 3
+  diversity_weight: 0.35
+  late_phase_fraction: 0.8
+  early_stop:
+    enabled: false
+    target_score: 1.0
+    patience_generations: 0
+
+cobench:
+  run_final_test: true
+
+evaluator:
+  import_path: "evolution.adapters.cobench:COBenchEvaluationAdapter"
+  kwargs:
+    repo_path: "/home/jianghp3/CO-Bench"
+    data_dir: "/home/jianghp3/co-bench-data"
+    task: "Assignment problem"
+    candidate_file: "solution.py"
+    timeout_seconds: 10
+    cpu_num: 1
+    feedback_length: 64
+    execution_backend: "local"

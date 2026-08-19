@@ -9,7 +9,11 @@ from evolution.archive import CandidateArchive
 from evolution.cobench import COBenchScheduler
 from evolution.models import EvaluationResult, ProductionResult, ValidationResult
 from evolution.scheduler import SchedulerConfig
-from evolution.adapters.cobench_worker import _development_only
+from evolution.adapters.cobench_worker import (
+    _development_only,
+    _development_payload,
+    _error_line_count,
+)
 
 
 def _fake_cobench_repo(tmp_path: Path) -> tuple[Path, Path]:
@@ -104,6 +108,60 @@ def test_cobench_final_test_uses_official_one_hour_watchdog(
     adapter.final_evaluate(candidate)
 
     assert observed["timeout"] == 3660.0
+
+
+def test_cobench_dev_uses_official_one_hour_watchdog(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo, data = _fake_cobench_repo(tmp_path)
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    (candidate / "solution.py").write_text(
+        "def solve(**kwargs):\n    return {}\n", encoding="utf-8"
+    )
+    adapter = COBenchEvaluationAdapter(
+        repo_path=str(repo),
+        data_dir=str(data),
+        task="Example task",
+        execution_backend="local",
+    )
+    observed: dict[str, float] = {}
+
+    def fake_run(*args, **kwargs):
+        observed["timeout"] = kwargs["timeout"]
+        return SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"score": 1.0, "feasible": true, "feedback": "ok", '
+                '"metrics": {"dev_score": 1.0, "error_cases": 0}}'
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("evolution.adapters.cobench.subprocess.run", fake_run)
+
+    adapter.evaluate(candidate)
+
+    assert observed["timeout"] == 3660.0
+
+
+def test_dev_feedback_error_markers_make_candidate_infeasible() -> None:
+    feedback = "\n".join(
+        [
+            "a.txt -> Exception: invalid solution",
+            "b.txt -> Caught Error: worker crashed",
+            "c.txt -> Timeout after 10 seconds",
+            "d.txt -> No result",
+            "Avg Score 12.0",
+        ]
+    )
+
+    payload = _development_payload(12.0, feedback)
+
+    assert _error_line_count(feedback) == 4
+    assert payload["feasible"] is False
+    assert payload["metrics"]["error_cases"] == 4.0
+    assert payload["error_type"] == "timeout"
 
 
 def test_cobench_validation_rejects_missing_or_async_solve(tmp_path: Path) -> None:

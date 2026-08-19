@@ -94,23 +94,33 @@ def _task_result(task: str, output_dir: Path, returncode: int, elapsed: float) -
     feasible = [item for item in evaluated if item.get("feasible") and item.get("score") is not None]
     selection_path = output_dir / "final" / "selection.json"
     final_path = output_dir / "final" / "final_test_result.json"
+    selection = (
+        json.loads(selection_path.read_text(encoding="utf-8"))
+        if selection_path.is_file()
+        else None
+    )
+    final_test = (
+        json.loads(final_path.read_text(encoding="utf-8"))
+        if final_path.is_file()
+        else None
+    )
+    if returncode != 0:
+        status = "failed"
+    elif selection is None:
+        status = "no_feasible" if not feasible else "failed"
+    elif final_test is None:
+        status = "failed"
+    else:
+        status = "complete"
     return {
         "task": task,
-        "status": "complete" if returncode == 0 else "failed",
+        "status": status,
         "returncode": returncode,
         "elapsed_seconds": round(elapsed, 3),
         "evaluations": len(evaluated),
         "development_best": max((float(item["score"]) for item in feasible), default=None),
-        "selection": (
-            json.loads(selection_path.read_text(encoding="utf-8"))
-            if selection_path.is_file()
-            else None
-        ),
-        "final_test": (
-            json.loads(final_path.read_text(encoding="utf-8"))
-            if final_path.is_file()
-            else None
-        ),
+        "selection": selection,
+        "final_test": final_test,
         "output_dir": str(output_dir),
     }
 

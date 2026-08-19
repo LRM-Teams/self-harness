@@ -60,6 +60,55 @@ def test_batch_result_reads_persisted_scores(tmp_path: Path) -> None:
     assert result["final_test"]["test_score"] == 0.75
 
 
+def test_batch_result_marks_zero_return_without_feasible_candidate_for_retry(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "task"
+    output.mkdir()
+    (output / "archive.json").write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {"evaluation_index": 1, "feasible": False, "score": 0.0},
+                    {"evaluation_index": 2, "feasible": False, "score": 0.0},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _task_result("task", output, 0, 12.5)
+
+    assert result["status"] == "no_feasible"
+    assert result["selection"] is None
+    assert result["final_test"] is None
+
+
+def test_batch_result_marks_missing_final_test_as_failed(tmp_path: Path) -> None:
+    output = tmp_path / "task"
+    final = output / "final"
+    final.mkdir(parents=True)
+    (output / "archive.json").write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {"evaluation_index": 1, "feasible": True, "score": 0.8},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (final / "selection.json").write_text(
+        json.dumps({"candidate_id": "c001"}), encoding="utf-8"
+    )
+
+    result = _task_result("task", output, 0, 12.5)
+
+    assert result["status"] == "failed"
+    assert result["selection"] == {"candidate_id": "c001"}
+    assert result["final_test"] is None
+
+
 def test_batch_runs_tasks_with_requested_concurrency(tmp_path: Path, monkeypatch) -> None:
     base_config = tmp_path / "base.yaml"
     base_config.write_text(
@@ -100,3 +149,45 @@ def test_batch_runs_tasks_with_requested_concurrency(tmp_path: Path, monkeypatch
 
     assert peak == 4
     assert len(result["tasks"]) == len(tasks)
+
+
+def test_batch_retries_no_feasible_task(tmp_path: Path, monkeypatch) -> None:
+    base_config = tmp_path / "base.yaml"
+    base_config.write_text(
+        yaml.safe_dump(
+            {
+                "output_dir": "replaced",
+                "evaluator": {"kwargs": {"task": "replaced"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    task = OFFICIAL_TASKS[0]
+    (output_root / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "tasks": {task: {"task": task, "status": "no_feasible"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+
+    def fake_run_task(index, total, task, config_path, task_output, output_root):
+        calls.append(task)
+        return task, {
+            "task": task,
+            "status": "complete",
+            "evaluations": 1,
+            "development_best": 1.0,
+            "final_test": {"test_score": 1.0},
+        }
+
+    monkeypatch.setattr(cobench_batch, "_run_task", fake_run_task)
+
+    cobench_batch.run_batch(base_config, output_root, [task])
+
+    assert calls == [task]

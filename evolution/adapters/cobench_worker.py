@@ -28,6 +28,23 @@ def _error_type(feedback: str) -> str | None:
     return None
 
 
+def _error_line_count(feedback: str) -> int:
+    """Count evaluator feedback lines that make a candidate infeasible."""
+    return sum(_error_type(line) is not None for line in feedback.splitlines())
+
+
+def _development_payload(dev_score: float, dev_feedback: str) -> dict:
+    error_lines = _error_line_count(dev_feedback)
+    finite_score = math.isfinite(dev_score)
+    return {
+        "score": dev_score if finite_score else 0.0,
+        "feasible": finite_score and error_lines == 0,
+        "feedback": dev_feedback,
+        "metrics": {"dev_score": dev_score, "error_cases": float(error_lines)},
+        "error_type": _error_type(dev_feedback),
+    }
+
+
 def _development_only(data):
     """Return a Data view that loads only public development instances."""
     if not all(hasattr(data, name) for name in ("get_dev", "load_data", "test_cases")):
@@ -92,18 +109,8 @@ def main() -> None:
         }
     else:
         dev_feedback = str(feedback.dev_feedback)
-        error_lines = sum(
-            "caught error" in line.lower() or "timeout" in line.lower() or "no result" in line.lower()
-            for line in dev_feedback.splitlines()
-        )
         dev_score = float(feedback.dev_score)
-        payload = {
-            "score": dev_score if math.isfinite(dev_score) else 0.0,
-            "feasible": math.isfinite(dev_score) and error_lines == 0,
-            "feedback": dev_feedback,
-            "metrics": {"dev_score": dev_score, "error_cases": float(error_lines)},
-            "error_type": _error_type(dev_feedback),
-        }
+        payload = _development_payload(dev_score, dev_feedback)
     print(json.dumps(payload, ensure_ascii=False))
 
 

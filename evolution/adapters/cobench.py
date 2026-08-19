@@ -139,12 +139,13 @@ class COBenchEvaluationAdapter:
                 env["PYTHONPATH"] = os.pathsep.join(
                     [str(PROJECT_DIR), env.get("PYTHONPATH", "")]
                 ).rstrip(os.pathsep)
-            # CO-Bench gives final evaluation up to one hour.  Development
-            # evaluations keep the tighter watchdog because they run once per
-            # candidate, while final evaluation may cover the full hidden set.
+            # The official timeout applies to each instance, not to the whole
+            # evaluator subprocess. Both development and final evaluation may
+            # traverse enough instances to legitimately run for close to an
+            # hour even though every solve call is still limited separately.
             process_timeout = (
                 3660.0
-                if mode == "final"
+                if mode in {"dev", "final"}
                 else max(60.0, self.timeout_seconds * 20)
             )
             completed = subprocess.run(
