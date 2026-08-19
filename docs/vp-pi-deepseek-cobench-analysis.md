@@ -168,6 +168,8 @@ flowchart LR
 
 官方限制是**单实例** 10 秒、1 CPU；一道题的 dev split 可能包含许多实例，因此 evaluator 整体运行时间可以显著超过 200 秒。当前 Adapter 却把整个 dev subprocess 的 watchdog 设为 `max(60, timeout_seconds × 20)`，在本轮即 200 秒。
 
+2026-08-19 的定向复跑进一步量化了这个问题：Hybrid Reentrant Shop Scheduling 的公开 dev split 为 27 个 case、每个 25 个实例，共 675 个串行实例。官方 runner 对每个实例还保留约 1 秒退出余量，因此最坏耗时约 7,425 秒；3,660 秒的第一版修复仍然不足。当前修复将 dev/final 外层 watchdog 分别设为 10,860/21,660 秒，并在独立 session 中启动 worker；一旦外层超时，递归清理整个进程树，避免 multiprocessing 子进程成为孤儿。官方单实例 `timeout=10` 和 `cpu_num=1` 保持不变。
+
 受影响的 6 题为：
 
 - Constrained non-guillotine cutting
@@ -354,7 +356,7 @@ Aircraft landing 是直接证据：被选择候选 dev score 为 14.7117、`feas
 
 ## 进一步需要回答的问题
 
-- 6 个长 evaluator 任务的真实 dev 总时长分布是多少，3660 秒 watchdog 是否足够且不过度？
+- 除已确认需要约 2.1 小时上界的 Hybrid Reentrant 外，其余长 evaluator 任务的真实 dev 总时长分布如何？
 - 哪些题的 normalized score 理论上有 1.0 上界，是否应建立 task-specific early-stop policy？
 - Valid Solution 的官方统计脚本和本报告的日志估算是否完全一致？
 - 本轮使用 local evaluator 的原因是什么，严格复验是否切回 Docker？

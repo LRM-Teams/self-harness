@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,105 @@ from ..models import EvaluationResult, ValidationResult
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
 WORKER_PATH = Path(__file__).resolve().with_name("cobench_worker.py")
+
+# The largest public split in the current CO-Bench suite (Hybrid Reentrant
+# Shop Scheduling) has 675 instances. The official runner is single-CPU and
+# gives each instance timeout_seconds + one second to shut down, so one hour
+# is not a sufficient outer watchdog. Final evaluation currently traverses
+# both public and hidden instances before filtering the result.
+DEFAULT_DEV_WATCHDOG_SECONDS = 3 * 60 * 60 + 60
+DEFAULT_FINAL_WATCHDOG_SECONDS = 6 * 60 * 60 + 60
+
+
+def _descendant_pids(root_pid: int) -> list[int]:
+    """Return Linux descendants while their parent relationships still exist."""
+    if os.name != "posix" or not Path("/proc").is_dir():
+        return []
+    children: dict[int, list[int]] = {}
+    for status_path in Path("/proc").glob("[0-9]*/status"):
+        try:
+            pid = int(status_path.parent.name)
+            ppid_line = next(
+                line for line in status_path.read_text(encoding="utf-8").splitlines()
+                if line.startswith("PPid:")
+            )
+            parent = int(ppid_line.split()[1])
+        except (OSError, StopIteration, ValueError):
+            continue
+        children.setdefault(parent, []).append(pid)
+
+    descendants: list[int] = []
+    pending = list(children.get(root_pid, []))
+    while pending:
+        pid = pending.pop()
+        descendants.append(pid)
+        pending.extend(children.get(pid, []))
+    return descendants
+
+
+def _signal_process(pid: int, sig: signal.Signals) -> None:
+    try:
+        os.kill(pid, sig)
+    except ProcessLookupError:
+        pass
+
+
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    """Terminate the worker and children, including children in new groups."""
+    descendants = _descendant_pids(process.pid)
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    else:
+        process.terminate()
+    for pid in reversed(descendants):
+        _signal_process(pid, signal.SIGTERM)
+
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+    for pid in reversed(descendants):
+        _signal_process(pid, signal.SIGKILL)
+
+
+def _run_subprocess(
+    command: list[str],
+    *,
+    cwd: str | Path | None,
+    env: dict[str, str] | None,
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    """Run a worker in its own session and clean its process tree on timeout."""
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=os.name == "posix",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _terminate_process_tree(process)
+        stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(
+            command,
+            timeout,
+            output=stdout or exc.output,
+            stderr=stderr or exc.stderr,
+        ) from exc
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 class COBenchEvaluationAdapter:
@@ -34,6 +134,8 @@ class COBenchEvaluationAdapter:
         docker_image: str = "self-harness-cobench:latest",
         docker_binary: str = "docker",
         container_memory: str = "8g",
+        dev_watchdog_seconds: float = DEFAULT_DEV_WATCHDOG_SECONDS,
+        final_watchdog_seconds: float = DEFAULT_FINAL_WATCHDOG_SECONDS,
         forbidden_imports: list[str] | None = None,
         forbidden_calls: list[str] | None = None,
     ):
@@ -48,6 +150,8 @@ class COBenchEvaluationAdapter:
         self.docker_image = docker_image
         self.docker_binary = docker_binary
         self.container_memory = container_memory
+        self.dev_watchdog_seconds = float(dev_watchdog_seconds)
+        self.final_watchdog_seconds = float(final_watchdog_seconds)
         self.forbidden_imports = set(
             forbidden_imports
             or [
@@ -71,6 +175,8 @@ class COBenchEvaluationAdapter:
             raise ValueError("execution_backend must be local or docker")
         if self.cpu_num != 1:
             raise ValueError("CO-Bench fairness requires cpu_num=1")
+        if self.dev_watchdog_seconds <= 0 or self.final_watchdog_seconds <= 0:
+            raise ValueError("CO-Bench watchdogs must be positive")
 
     def validate(self, candidate_dir: Path) -> ValidationResult:
         path = candidate_dir / self.candidate_file
@@ -140,22 +246,17 @@ class COBenchEvaluationAdapter:
                     [str(PROJECT_DIR), env.get("PYTHONPATH", "")]
                 ).rstrip(os.pathsep)
             # The official timeout applies to each instance, not to the whole
-            # evaluator subprocess. Both development and final evaluation may
-            # traverse enough instances to legitimately run for close to an
-            # hour even though every solve call is still limited separately.
-            process_timeout = (
-                3660.0
-                if mode in {"dev", "final"}
-                else max(60.0, self.timeout_seconds * 20)
-            )
-            completed = subprocess.run(
+            # evaluator subprocess. Keep separate outer limits because final
+            # evaluation traverses public and hidden instances before filtering.
+            process_timeout = {
+                "dev": self.dev_watchdog_seconds,
+                "final": self.final_watchdog_seconds,
+            }.get(mode, max(60.0, self.timeout_seconds * 20))
+            completed = _run_subprocess(
                 command,
                 cwd=cwd,
                 env=env,
-                text=True,
-                capture_output=True,
                 timeout=process_timeout,
-                check=False,
             )
         if completed.returncode != 0:
             raise RuntimeError(

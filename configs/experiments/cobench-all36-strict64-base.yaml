@@ -44,5 +44,9 @@ evaluator:
     candidate_file: "solution.py"
     timeout_seconds: 10
     cpu_num: 1
+    # Hybrid Reentrant dev has 675 serial instances; final traverses 1,350.
+    # These are outer watchdogs only. The official per-instance limit stays 10s.
+    dev_watchdog_seconds: 10860
+    final_watchdog_seconds: 21660
     feedback_length: 64
     execution_backend: "local"

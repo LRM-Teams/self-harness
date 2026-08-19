@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from types import SimpleNamespace
 
-from evolution.adapters.cobench import COBenchEvaluationAdapter
+import pytest
+
+from evolution.adapters.cobench import COBenchEvaluationAdapter, _run_subprocess
 from evolution.archive import CandidateArchive
 from evolution.cobench import COBenchScheduler
 from evolution.models import EvaluationResult, ProductionResult, ValidationResult
@@ -78,7 +84,7 @@ def test_cobench_final_test_is_separate_from_search(tmp_path: Path) -> None:
     assert final == {"test_score": 0.99, "test_feedback": "HIDDEN TEST FEEDBACK"}
 
 
-def test_cobench_final_test_uses_official_one_hour_watchdog(
+def test_cobench_final_test_watchdog_covers_full_official_evaluator(
     tmp_path: Path, monkeypatch
 ) -> None:
     repo, data = _fake_cobench_repo(tmp_path)
@@ -103,14 +109,14 @@ def test_cobench_final_test_uses_official_one_hour_watchdog(
             stderr="",
         )
 
-    monkeypatch.setattr("evolution.adapters.cobench.subprocess.run", fake_run)
+    monkeypatch.setattr("evolution.adapters.cobench._run_subprocess", fake_run)
 
     adapter.final_evaluate(candidate)
 
-    assert observed["timeout"] == 3660.0
+    assert observed["timeout"] == 21660.0
 
 
-def test_cobench_dev_uses_official_one_hour_watchdog(
+def test_cobench_dev_watchdog_covers_large_public_split(
     tmp_path: Path, monkeypatch
 ) -> None:
     repo, data = _fake_cobench_repo(tmp_path)
@@ -138,11 +144,38 @@ def test_cobench_dev_uses_official_one_hour_watchdog(
             stderr="",
         )
 
-    monkeypatch.setattr("evolution.adapters.cobench.subprocess.run", fake_run)
+    monkeypatch.setattr("evolution.adapters.cobench._run_subprocess", fake_run)
 
     adapter.evaluate(candidate)
 
-    assert observed["timeout"] == 3660.0
+    assert observed["timeout"] == 10860.0
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process-session cleanup is POSIX-specific")
+def test_cobench_worker_timeout_kills_descendants(tmp_path: Path) -> None:
+    child_pid_path = tmp_path / "child.pid"
+    script = tmp_path / "spawn_child.py"
+    script.write_text(
+        "import subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+        f"open({str(child_pid_path)!r}, 'w').write(str(child.pid))\n"
+        "time.sleep(30)\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run_subprocess(
+            [sys.executable, str(script)], cwd=tmp_path, env=os.environ.copy(), timeout=0.5
+        )
+
+    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+    for _ in range(20):
+        status = Path(f"/proc/{child_pid}/status")
+        if not status.exists() or "State:\tZ" in status.read_text(encoding="utf-8"):
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"timed-out worker descendant {child_pid} is still running")
 
 
 def test_dev_feedback_error_markers_make_candidate_infeasible() -> None:
