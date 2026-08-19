@@ -16,6 +16,35 @@ def test_official_batch_contains_36_unique_tasks() -> None:
     assert len(set(OFFICIAL_TASKS)) == 36
 
 
+def test_strict_batch_config_has_official_budget_and_existing_prompts() -> None:
+    project = Path(__file__).resolve().parent.parent
+    payload = yaml.safe_load(
+        (
+            project
+            / "configs"
+            / "experiments"
+            / "cobench-all36-strict64-base.yaml"
+        ).read_text(encoding="utf-8")
+    )
+
+    evolution = payload["evolution"]
+    evaluator = payload["evaluator"]["kwargs"]
+    assert evolution["evaluation_budget"] == 64
+    assert evolution["branches"] == 4
+    assert evolution["generation_workers"] == 4
+    assert evolution["evaluation_workers"] == 1
+    assert evolution["early_stop"]["enabled"] is False
+    assert evaluator["timeout_seconds"] == 10
+    assert evaluator["cpu_num"] == 1
+    assert payload["cobench"]["run_final_test"] is True
+    for key in (
+        "producer_prompt_path",
+        "debugger_prompt_path",
+        "communicator_prompt_path",
+    ):
+        assert Path(payload["pi"][key]).is_file()
+
+
 def test_batch_writes_isolated_task_config(tmp_path: Path) -> None:
     base = {
         "output_dir": "replaced",

@@ -11,9 +11,9 @@ pi:
   timeout_seconds: 900
   max_tokens: 8192
   enable_search: false
-  producer_prompt_path: "../../agents/pi_cobench/producer.md"
-  debugger_prompt_path: "../../agents/pi_cobench/debugger.md"
-  communicator_prompt_path: "../../agents/pi_cobench/communicator.md"
+  producer_prompt_path: "/home/jianghp3/worktrees/self-harness-pi-deepseek/agents/pi_cobench/producer.md"
+  debugger_prompt_path: "/home/jianghp3/worktrees/self-harness-pi-deepseek/agents/pi_cobench/debugger.md"
+  communicator_prompt_path: "/home/jianghp3/worktrees/self-harness-pi-deepseek/agents/pi_cobench/communicator.md"
 
 evolution:
   evaluation_budget: 64
